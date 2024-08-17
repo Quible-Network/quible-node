@@ -4,7 +4,7 @@ use tokio::time::{Duration, Instant, sleep_until};
 // use jsonrpsee::core::client::ClientT;
 // use jsonrpsee::http_client::HttpClient;
 // use jsonrpsee::rpc_params;
-use jsonrpsee::{server::{RpcModule, Server}, types::ErrorObjectOwned};
+use jsonrpsee::{server::Server, types::ErrorObjectOwned};
 
 use quible_rpc::QuibleRpcServer;
 
@@ -30,24 +30,6 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     async fn send_transaction(&self, transaction: types::Transaction) -> Result<types::Transaction, ErrorObjectOwned> {
         Ok(transaction)
     }
-}
-
-#[allow(dead_code)]
-async fn run_server() -> anyhow::Result<SocketAddr> {
-    // TODO: make port configurable
-    let server = Server::builder().build("127.0.0.1:9013".parse::<SocketAddr>()?).await?;
-    let mut module = RpcModule::new(());
-    module.register_method::<Result<types::Transaction, ErrorObjectOwned>, _>("quible_sendTransaction", |params, _, _| {
-        let params: types::Transaction = params.parse()?;
-        Ok(params)
-    })?;
-
-    let addr = server.local_addr()?;
-    let handle = server.start(module);
-
-    tokio::spawn(handle.stopped());
-
-    Ok(addr)
 }
 
 async fn run_derive_server() -> anyhow::Result<SocketAddr> {
