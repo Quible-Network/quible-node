@@ -1,12 +1,15 @@
 use std::net::SocketAddr;
-use jsonrpsee::{core::async_trait, proc_macros::rpc};
+use jsonrpsee::core::async_trait;
 use tokio::time::{Duration, Instant, sleep_until};
 // use jsonrpsee::core::client::ClientT;
 // use jsonrpsee::http_client::HttpClient;
 // use jsonrpsee::rpc_params;
 use jsonrpsee::{server::{RpcModule, Server}, types::ErrorObjectOwned};
 
-mod types;
+use quible_rpc::QuibleRpcServer;
+
+pub mod quible_rpc;
+pub mod types;
 
 const SLOT_DURATION: Duration = Duration::from_secs(4);
 
@@ -20,21 +23,16 @@ fn propose_block(block_number: i64) {
     // TODO(surrealdb): insert blocks into db
 }
 
-#[rpc(server, client, namespace = "quible")]
-pub trait RpcServer {
-    #[method(name = "sendTransaction")]
-    async fn send_transaction(&self, transaction: types::Transaction) -> Result<types::Transaction, ErrorObjectOwned>;
-}
-
-pub struct RpcServerImpl;
+pub struct QuibleRpcServerImpl;
 
 #[async_trait]
-impl RpcServer for RpcServerImpl {
+impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     async fn send_transaction(&self, transaction: types::Transaction) -> Result<types::Transaction, ErrorObjectOwned> {
         Ok(transaction)
     }
 }
 
+#[allow(dead_code)]
 async fn run_server() -> anyhow::Result<SocketAddr> {
     // TODO: make port configurable
     let server = Server::builder().build("127.0.0.1:9013".parse::<SocketAddr>()?).await?;
@@ -56,7 +54,7 @@ async fn run_derive_server() -> anyhow::Result<SocketAddr> {
     let server = Server::builder().build("127.0.0.1:9013".parse::<SocketAddr>()?).await?;
 
     let addr = server.local_addr()?;
-    let handle = server.start(RpcServerImpl.into_rpc());
+    let handle = server.start(QuibleRpcServerImpl.into_rpc());
 
     tokio::spawn(handle.stopped());
 

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Transaction {
     // TODO: include author
     // TODO: include nonce
@@ -8,7 +8,7 @@ pub struct Transaction {
     pub events: Vec<Event>
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "name")]
 pub enum Event {
     CreateQuirkle {
