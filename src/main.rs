@@ -1,17 +1,15 @@
-use once_cell::sync::Lazy;
 use std::net::SocketAddr;
 use jsonrpsee::core::async_trait;
 use tokio::time::{Duration, Instant, sleep_until};
+// use jsonrpsee::core::client::ClientT;
+// use jsonrpsee::http_client::HttpClient;
+// use jsonrpsee::rpc_params;
 use jsonrpsee::{server::Server, types::ErrorObjectOwned};
-use surrealdb::{Result, Surreal};
-use surrealdb::engine::local::{Db, Mem};
 
 use quible_rpc::QuibleRpcServer;
 
 pub mod quible_rpc;
 pub mod types;
-
-static DB: Lazy<Surreal<Db>> = Lazy::new(Surreal::init);
 
 const SLOT_DURATION: Duration = Duration::from_secs(4);
 
@@ -47,8 +45,6 @@ async fn run_derive_server() -> anyhow::Result<SocketAddr> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    DB.connect::<Mem>(()).await?;
-
     let server_addr = run_derive_server().await?;
     let url = format!("http://{}", server_addr);
     println!("server listening at {}", url);
