@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-
+use jsonrpsee::{core::async_trait, proc_macros::rpc};
 use tokio::time::{Duration, Instant, sleep_until};
 // use jsonrpsee::core::client::ClientT;
 // use jsonrpsee::http_client::HttpClient;
@@ -20,6 +20,21 @@ fn propose_block(block_number: i64) {
     // TODO(surrealdb): insert blocks into db
 }
 
+#[rpc(server, client, namespace = "quible")]
+pub trait RpcServer {
+    #[method(name = "sendTransaction")]
+    async fn send_transaction(&self, transaction: types::Transaction) -> Result<types::Transaction, ErrorObjectOwned>;
+}
+
+pub struct RpcServerImpl;
+
+#[async_trait]
+impl RpcServer for RpcServerImpl {
+    async fn send_transaction(&self, transaction: types::Transaction) -> Result<types::Transaction, ErrorObjectOwned> {
+        Ok(transaction)
+    }
+}
+
 async fn run_server() -> anyhow::Result<SocketAddr> {
     // TODO: make port configurable
     let server = Server::builder().build("127.0.0.1:9013".parse::<SocketAddr>()?).await?;
@@ -37,9 +52,20 @@ async fn run_server() -> anyhow::Result<SocketAddr> {
     Ok(addr)
 }
 
+async fn run_derive_server() -> anyhow::Result<SocketAddr> {
+    let server = Server::builder().build("127.0.0.1:9013".parse::<SocketAddr>()?).await?;
+
+    let addr = server.local_addr()?;
+    let handle = server.start(RpcServerImpl.into_rpc());
+
+    tokio::spawn(handle.stopped());
+
+    Ok(addr)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let server_addr = run_server().await?;
+    let server_addr = run_derive_server().await?;
     let url = format!("http://{}", server_addr);
     println!("server listening at {}", url);
     // TODO: move proposal loop into a thread or something async
