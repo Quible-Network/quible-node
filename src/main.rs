@@ -80,7 +80,7 @@ async fn main() -> anyhow::Result<()> {
     let conn = Connection::open_in_memory()?;
     conn.execute("
         CREATE TABLE pending_transactions (
-          hash STRING PRIMARY KEY,
+          hash BLOB PRIMARY KEY,
           data JSON
         )
     ", ())?;
