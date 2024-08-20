@@ -64,20 +64,19 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     }
 }
 
-async fn run_derive_server(conn: Connection) -> anyhow::Result<SocketAddr> {
+async fn run_derive_server(conn: &Arc<Mutex<Connection>>) -> anyhow::Result<SocketAddr> {
     let server = Server::builder().build("127.0.0.1:9013".parse::<SocketAddr>()?).await?;
 
     let addr = server.local_addr()?;
-    let handle = server.start(QuibleRpcServerImpl { db: Arc::new(Mutex::new(conn)) }.into_rpc());
+    // let handle = server.start(QuibleRpcServerImpl { db: Arc::new(Mutex::new(conn)) }.into_rpc());
+    let handle = server.start(QuibleRpcServerImpl { db: conn.clone() }.into_rpc());
 
     tokio::spawn(handle.stopped());
 
     Ok(addr)
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    let conn = Connection::open_in_memory()?;
+fn initialize_db(conn: &Connection) -> anyhow::Result<()> {
     conn.execute("
         CREATE TABLE pending_transactions (
           hash BLOB PRIMARY KEY,
@@ -85,7 +84,17 @@ async fn main() -> anyhow::Result<()> {
         )
     ", ())?;
 
-    let server_addr = run_derive_server(conn).await?;
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let conn = Connection::open_in_memory()?;
+    initialize_db(&conn)?;
+
+    let conn_arc = Arc::new(Mutex::new(conn));
+
+    let server_addr = run_derive_server(&conn_arc).await?;
     let url = format!("http://{}", server_addr);
     println!("server listening at {}", url);
 
@@ -108,5 +117,54 @@ async fn main() -> anyhow::Result<()> {
 
         block_timestamp = block_timestamp + SLOT_DURATION;
         block_number += 1;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use jsonrpsee::http_client::HttpClient;
+    use crate::quible_rpc::QuibleRpcClient;
+
+    #[tokio::test]
+    async fn test_rpc() -> anyhow::Result<()> {
+        let conn = Connection::open_in_memory()?;
+        initialize_db(&conn)?;
+
+        let conn_arc = Arc::new(Mutex::new(conn));
+
+        let server_addr = run_derive_server(&conn_arc).await?;
+        let url = format!("http://{}", server_addr);
+        println!("server listening at {}", url);
+        let url = "http://localhost:9013";
+        let client = HttpClient::builder().build(url)?;
+        let transaction = types::Transaction {
+            events: vec![
+                types::Event::CreateQuirkle {
+                    members: vec![],
+                    proof_ttl: 86400
+                }
+            ]
+        };
+
+        // let params = rpc_params![transaction];
+        // let params = rpc_params![json!({"events": [{"name": "CreateQuirkle", "members": [], "proof_ttl": 86400}]})];
+        // let response: Result<String, _> = client.request("quible_sendTransaction", params).await;
+        let response = client.send_transaction(transaction).await.unwrap();
+        dbg!("response: {:?}", response);
+
+        let conn_lock = conn_arc.lock().unwrap();
+        let mut stmt = conn_lock.prepare("SELECT hash, data FROM pending_transactions")?;
+        let row_iter = stmt.query_map([], |row| {
+            let raw_hash = row.get::<_, [u8; 32]>(0)?;
+            let hash = format!("0x{}", raw_hash.iter().map(|byte| format!("{:02x}", byte)).collect::<String>());
+            let data = row.get::<_, serde_json::value::Value>(1)?;
+            Ok((hash, data))
+        })?;
+
+        for row in row_iter {
+            println!("Found row {:?}", row.unwrap());
+        }
+        Ok(())
     }
 }
