@@ -10,4 +10,8 @@ use crate::types;
 pub trait QuibleRpc { // for some reason the macro makes RpcServerServer
     #[method(name = "sendTransaction")]
     async fn send_transaction(&self, transaction: types::Transaction) -> Result<types::Transaction, ErrorObjectOwned>;
+
+    // TODO: request proof
+    // TODO: get block number
+    // TODO: ...
 }
