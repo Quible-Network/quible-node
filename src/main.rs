@@ -19,7 +19,7 @@ pub mod types;
 
 const SLOT_DURATION: Duration = Duration::from_secs(4);
 
-fn propose_block(block_number: u64, conn_arc: &Arc<Mutex<Connection>>) {
+async fn propose_block(block_number: u64, conn_arc: &Arc<Mutex<Connection>>) {
     println!("new block! {}", block_number);
 
     let conn_lock = conn_arc.lock().unwrap();
@@ -39,12 +39,14 @@ fn propose_block(block_number: u64, conn_arc: &Arc<Mutex<Connection>>) {
     let transactions_iter = transactions_iter_result.unwrap();
 
     let mut transaction_hashes: Vec<TransactionHash> = Vec::new();
+    let mut transactions: Vec<Transaction> = Vec::new();
     let mut transactions_json: Vec<serde_json::value::Value> = Vec::new();
 
     for transaction in transactions_iter.iter() {
         let (hash, transaction) = transaction;
         transaction_hashes.push(*hash);
         transactions_json.push(serde_json::to_value(transaction).unwrap());
+        transactions.push(transaction.clone());
     }
 
     let timestamp: u64 = std::time::SystemTime::now()
@@ -76,12 +78,56 @@ fn propose_block(block_number: u64, conn_arc: &Arc<Mutex<Connection>>) {
     conn_lock
         .execute(
             "
-        INSERT INTO blocks (hash, block_number, timestamp, transactions)
-        VALUES (?1, ?2, ?3, ?4)
-    ",
+            INSERT INTO blocks (hash, block_number, timestamp, transactions)
+            VALUES (?1, ?2, ?3, ?4)
+            ",
             params,
         )
         .unwrap();
+
+    for transaction in transactions {
+        for event in transaction.events {
+            match event {
+                types::Event::CreateQuirkle { members, proof_ttl } => {
+                    let quirkle_count: u64 = conn_lock.query_row(
+                        "
+                        INSERT INTO author_quirkle_counts (author, count)
+                        VALUES (?1, 1)
+                        ON CONFLICT (author) DO UPDATE SET
+                          count = count + 1
+                        RETURNING count
+                        ",
+                        [transaction.author],
+                        |row| row.get(0)
+                    ).unwrap();
+
+                    let quirkle_root = compute_quirkle_root(transaction.author, quirkle_count);
+
+                    conn_lock
+                        .execute(
+                            "
+                            INSERT INTO quirkle_proof_ttls (quirkle_root, proof_ttl)
+                            VALUES (?1, ?2)
+                            ",
+                            (quirkle_root.bytes, proof_ttl),
+                        )
+                        .unwrap();
+
+                    for member in members {
+                        conn_lock
+                            .execute(
+                                "
+                                INSERT INTO quirkle_items (quirkle_root, address)
+                                VALUES (?1, ?2)
+                                ",
+                                (quirkle_root.bytes, member),
+                            )
+                            .unwrap();
+                    }
+                }
+            }
+        }
+    }
 }
 
 pub struct QuibleRpcServerImpl {
@@ -90,10 +136,10 @@ pub struct QuibleRpcServerImpl {
 
 // TODO: use transaction nonce instead of block_number,
 //       instead of using quirkle contents
-fn compute_quirkle_root(author: [u8; 20], block_number: u64) -> types::QuirkleRoot {
+fn compute_quirkle_root(author: [u8; 20], contract_count: u64) -> types::QuirkleRoot {
     let mut quirkle_data_hasher = Keccak256::new();
     quirkle_data_hasher.update(author);
-    quirkle_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(block_number));
+    quirkle_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(contract_count));
 
     let quirkle_hash_vec = quirkle_data_hasher.finalize();
     types::QuirkleRoot {
@@ -154,7 +200,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
             "
             INSERT INTO pending_transactions (hash, data)
             VALUES (?1, ?2)
-        ",
+            ",
             (transaction_hash, transaction_json),
         )
         .map_err(|error| {
@@ -288,7 +334,7 @@ fn initialize_db(conn: &Connection) -> anyhow::Result<()> {
           hash BLOB PRIMARY KEY,
           data JSON
         )
-    ",
+        ",
         (),
     )?;
 
@@ -302,7 +348,38 @@ fn initialize_db(conn: &Connection) -> anyhow::Result<()> {
           timestamp DATETIME,
           transactions JSON
         )
-    ",
+        ",
+        (),
+    )?;
+
+    conn.execute(
+        "
+        CREATE TABLE author_quirkle_counts (
+          author BLOB PRIMARY KEY,
+          count INT
+        )
+        ",
+        (),
+    )?;
+
+    conn.execute(
+        "
+        CREATE TABLE quirkle_proof_ttls (
+          quirkle_root BLOB PRIMARY KEY,
+          proof_ttl INT
+        )
+        ",
+        (),
+    )?;
+
+    conn.execute(
+        "
+        CREATE TABLE quirkle_items (
+          quirkle_root BLOB,
+          address TEXT,
+          PRIMARY KEY (quirkle_root, address)
+        )
+        ",
         (),
     )?;
 
@@ -333,7 +410,7 @@ async fn main() -> anyhow::Result<()> {
     let mut block_timestamp = Instant::now();
 
     loop {
-        propose_block(block_number, &conn_arc);
+        propose_block(block_number, &conn_arc).await;
 
         sleep_until(block_timestamp + SLOT_DURATION).await;
 
@@ -347,7 +424,6 @@ mod tests {
     use super::*;
     use crate::quible_rpc::QuibleRpcClient;
     use jsonrpsee::http_client::HttpClient;
-    use types::QuirkleRoot;
 
     #[tokio::test]
     async fn test_send_transaction() -> anyhow::Result<()> {
@@ -410,22 +486,34 @@ mod tests {
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
 
-        // let params = rpc_params![transaction];
-        // let params = rpc_params![json!({"events": [{"name": "CreateQuirkle", "members": [], "proof_ttl": 86400}]})];
-        // let response: Result<String, _> = client.request("quible_sendTransaction", params).await;
-        let result = client
-            .request_proof(
-
-            QuirkleRoot { bytes: [
+        let author = [
                 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
                 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0,
-            ] }
-                , "bar".to_string(), 0)
+            ];
+
+        let transaction = Transaction {
+            author,
+            events: vec![types::Event::CreateQuirkle {
+                members: vec!["foo".to_string()],
+                proof_ttl: 86400,
+            }],
+        };
+
+        client.send_transaction(transaction).await.unwrap();
+
+        propose_block(1, &conn_arc).await;
+
+        let success_response = client
+            .request_proof(compute_quirkle_root(author, 1), "foo".to_string(), 0)
+            .await
+            .unwrap();
+        dbg!("success response: {:?}", success_response);
+
+        let failure_response = client
+            .request_proof(compute_quirkle_root(author, 1), "bar".to_string(), 0)
             .await;
-        dbg!("response: {:?}", result);
+
+        println!("failure response: {:?}", failure_response);
 
         Ok(())
     }
