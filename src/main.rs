@@ -1,8 +1,10 @@
 use jsonrpsee::core::async_trait;
 use jsonrpsee::types::error::CALL_EXECUTION_FAILED_CODE;
 use std::net::SocketAddr;
+use std::ops::Add;
 use std::sync::{Arc, Mutex};
 use tokio::time::{sleep_until, Duration, Instant};
+use types::{Transaction, TransactionHash};
 // use jsonrpsee::core::client::ClientT;
 // use jsonrpsee::http_client::HttpClient;
 // use jsonrpsee::rpc_params;
@@ -17,42 +19,137 @@ pub mod types;
 
 const SLOT_DURATION: Duration = Duration::from_secs(4);
 
-fn propose_block(block_number: i64) {
+fn propose_block(block_number: u64, conn_arc: &Arc<Mutex<Connection>>) {
     println!("new block! {}", block_number);
 
-    // TODO(surrealdb): query transaction pool
+    let conn_lock = conn_arc.lock().unwrap();
+    let mut stmt = conn_lock
+        .prepare("SELECT hash, data FROM pending_transactions")
+        .unwrap();
+    let transactions_iter_result: Result<Vec<([u8; 32], Transaction)>, rusqlite::Error> = stmt
+        .query_map([], |row| {
+            let raw_hash = row.get::<_, [u8; 32]>(0)?;
+            let data = row.get::<_, serde_json::value::Value>(1)?;
+            let transaction: Transaction = serde_json::from_value(data).unwrap();
+            Ok((raw_hash, transaction))
+        })
+        .unwrap()
+        .collect();
+
+    let transactions_iter = transactions_iter_result.unwrap();
+
+    let mut transaction_hashes: Vec<TransactionHash> = Vec::new();
+    let mut transactions_json: Vec<serde_json::value::Value> = Vec::new();
+
+    for transaction in transactions_iter.iter() {
+        let (hash, transaction) = transaction;
+        transaction_hashes.push(*hash);
+        transactions_json.push(serde_json::to_value(transaction).unwrap());
+    }
+
+    let timestamp: u64 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| {
+            ErrorObjectOwned::owned(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: could not generate timestamp",
+                Some(e.to_string()),
+            )
+        })
+        .unwrap()
+        .as_secs();
+
+    let block_hash = compute_block_hash(block_number, timestamp, transaction_hashes);
+
+    let params = (
+        block_hash,
+        block_number,
+        timestamp,
+        serde_json::value::Value::Array(transactions_json),
+    );
+
     // TODO: generate merkle root of transactions
-    // TODO: format block header with block number, timestamp, merkle root
+    // TODO: refactor to use unified blocker header type;
+    //       insert block_header as a single column
     // TODO(gossip): broadcast block header and transaction list
-    // TODO(surrealdb): insert blocks into db
+
+    conn_lock
+        .execute(
+            "
+        INSERT INTO blocks (hash, block_number, timestamp, transactions)
+        VALUES (?1, ?2, ?3, ?4)
+    ",
+            params,
+        )
+        .unwrap();
 }
 
 pub struct QuibleRpcServerImpl {
     db: Arc<Mutex<Connection>>,
 }
 
+// TODO: use transaction nonce instead of block_number,
+//       instead of using quirkle contents
+fn compute_quirkle_root(author: [u8; 20], block_number: u64) -> types::QuirkleRoot {
+    let mut quirkle_data_hasher = Keccak256::new();
+    quirkle_data_hasher.update(author);
+    quirkle_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(block_number));
+
+    let quirkle_hash_vec = quirkle_data_hasher.finalize();
+    types::QuirkleRoot {
+        bytes: quirkle_hash_vec.as_slice().try_into().unwrap()
+    }
+}
+
+fn compute_transaction_hash(transaction: Transaction) -> TransactionHash {
+    let mut transaction_data_hasher = Keccak256::new();
+
+    for event in transaction.events {
+        match event {
+            types::Event::CreateQuirkle { members, proof_ttl } => {
+                for member in members {
+                    transaction_data_hasher.update(member);
+                }
+
+                transaction_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(proof_ttl));
+            }
+        }
+    }
+
+    let transaction_hash_vec = transaction_data_hasher.finalize();
+    transaction_hash_vec.as_slice().try_into().unwrap()
+}
+
+// TODO: refactor this such that there is only a block_header parameter
+//       instead of individual parameters
+fn compute_block_hash(
+    block_number: u64,
+    timestamp: u64,
+    transaction_hashes: Vec<TransactionHash>,
+) -> types::BlockHash {
+    let mut block_data_hasher = Keccak256::new();
+
+    block_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(block_number));
+    block_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(timestamp));
+
+    for transaction_hash in transaction_hashes {
+        block_data_hasher.update(transaction_hash);
+    }
+
+    let block_hash_vec = block_data_hasher.finalize();
+    block_hash_vec.as_slice().try_into().unwrap()
+}
+
 #[async_trait]
 impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     async fn send_transaction(
         &self,
-        transaction: types::Transaction,
-    ) -> Result<types::Transaction, ErrorObjectOwned> {
-        let mut transaction_data_hasher = Keccak256::new();
-        for event in transaction.clone().events {
-            match event {
-                types::Event::CreateQuirkle { members, proof_ttl } => {
-                    for member in members {
-                        transaction_data_hasher.update(member);
-                    }
-                    transaction_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(proof_ttl));
-                }
-            }
-        }
-        let transaction_hash: [u8; 32]; // TODO: check that this is the right size
-        let transaction_hash_vec = transaction_data_hasher.finalize();
-        transaction_hash = transaction_hash_vec.as_slice().try_into().unwrap();
+        transaction: Transaction,
+    ) -> Result<Transaction, ErrorObjectOwned> {
+        let transaction_hash = compute_transaction_hash(transaction.clone());
         let transaction_json = serde_json::to_string(&transaction).unwrap();
         let db = &self.db.lock().unwrap();
+
         db.execute(
             "
             INSERT INTO pending_transactions (hash, data)
@@ -67,45 +164,106 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                 Some(error.to_string()),
             )
         })?;
+
         Ok(transaction)
     }
 
     async fn request_proof(
         &self,
-        quirkle_root: String,
+        quirkle_root: types::QuirkleRoot,
         member_address: String,
         _requested_at_block_number: u128,
     ) -> Result<types::QuirkleProof, ErrorObjectOwned> {
-        let expires_at: u64 = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(|e| {
+        let db = &self.db.lock().unwrap();
+
+        let mut stmt = db
+            .prepare("SELECT block_number, transactions FROM blocks ORDER BY block_number ASC")
+            .unwrap();
+
+        let mut members: Vec<String> = Vec::new();
+        let mut proof_ttl: u64 = 0;
+
+        let transactions_query = stmt
+            .query_map([], |row| {
+                let block_number = row.get::<_, u64>(0)?;
+                let data = row.get::<_, serde_json::value::Value>(1)?;
+                Ok((block_number, data))
+            })
+            .unwrap();
+
+        for row in transactions_query {
+            let (block_number, data) = row.map_err(|error| {
                 ErrorObjectOwned::owned(
                     CALL_EXECUTION_FAILED_CODE,
-                    "call execution failed: could not generate timestamp",
-                    Some(e.to_string()),
+                    "call execution failed: failed to query",
+                    Some(error.to_string()),
                 )
-            })?
-            .as_secs();
+            })?;
 
-        let mut content = Vec::new();
+            let transactions: Vec<Transaction> = serde_json::from_value(data).unwrap();
+            for transaction in transactions {
+                for event in transaction.events {
+                    match event {
+                        types::Event::CreateQuirkle {
+                            members: inner_members,
+                            proof_ttl: inner_proof_ttl,
+                        } => {
+                            // TODO: use transaction nonce instead of block_number
+                            let inner_quirkle_root =
+                                compute_quirkle_root(transaction.author, block_number);
 
-        content.extend_from_slice(quirkle_root.as_bytes());
-        content.extend_from_slice(member_address.as_bytes());
-        content.extend_from_slice(&expires_at.to_le_bytes());
+                            if inner_quirkle_root.bytes == quirkle_root.bytes {
+                                members = inner_members;
+                                proof_ttl = inner_proof_ttl;
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
-        Ok(types::QuirkleProof {
-            quirkle_root,
-            member_address,
-            expires_at,
-            signature: types::QuirkleSignature {
-                // TODO: pull in a real private key
-                bls_signature: bls_signatures::PrivateKey::new([
-                    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                    0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                ])
-                .sign(content),
-            },
-        })
+        if members.contains(&member_address) {
+            let expires_at: u64 = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|e| {
+                    ErrorObjectOwned::owned(
+                        CALL_EXECUTION_FAILED_CODE,
+                        "call execution failed: could not generate timestamp",
+                        Some(e.to_string()),
+                    )
+                })?
+                .add(Duration::from_secs(proof_ttl))
+                .as_secs();
+
+            let mut content = Vec::new();
+
+            // TODO: ensure that we're encoding the raw bytes of uint160
+            //       instead of concatenating the hexadecimal strings
+            content.extend_from_slice(&quirkle_root.bytes);
+            content.extend_from_slice(member_address.as_bytes());
+            content.extend_from_slice(&expires_at.to_le_bytes());
+
+            Ok(types::QuirkleProof {
+                quirkle_root,
+                member_address,
+                expires_at,
+                signature: types::QuirkleSignature {
+                    // TODO: pull in a real private key
+                    bls_signature: bls_signatures::PrivateKey::new([
+                        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+                        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+                        0x0, 0x0,
+                    ])
+                    .sign(content),
+                },
+            })
+        } else {
+            Err(ErrorObjectOwned::owned(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: could not verify membership",
+                Some("address not found in the quirkle"),
+            ))
+        }
     }
 }
 
@@ -134,6 +292,20 @@ fn initialize_db(conn: &Connection) -> anyhow::Result<()> {
         (),
     )?;
 
+    conn.execute(
+        // TODO: include state root blob
+        // TODO: include transactions root blob
+        "
+        CREATE TABLE blocks (
+          hash BLOB PRIMARY KEY,
+          block_number INT,
+          timestamp DATETIME,
+          transactions JSON
+        )
+    ",
+        (),
+    )?;
+
     Ok(())
 }
 
@@ -157,11 +329,11 @@ async fn main() -> anyhow::Result<()> {
     //   setup some kind of testing script that sends transactions and verifies
     //   that the correct blocks are seen in the db
 
-    let mut block_number = 0i64;
+    let mut block_number = 0u64;
     let mut block_timestamp = Instant::now();
 
     loop {
-        propose_block(block_number);
+        propose_block(block_number, &conn_arc);
 
         sleep_until(block_timestamp + SLOT_DURATION).await;
 
@@ -175,6 +347,7 @@ mod tests {
     use super::*;
     use crate::quible_rpc::QuibleRpcClient;
     use jsonrpsee::http_client::HttpClient;
+    use types::QuirkleRoot;
 
     #[tokio::test]
     async fn test_send_transaction() -> anyhow::Result<()> {
@@ -187,7 +360,11 @@ mod tests {
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
-        let transaction = types::Transaction {
+        let transaction = Transaction {
+            author: [
+                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+                0x0, 0x0, 0x0, 0x0,
+            ],
             events: vec![types::Event::CreateQuirkle {
                 members: vec![],
                 proof_ttl: 86400,
@@ -236,8 +413,19 @@ mod tests {
         // let params = rpc_params![transaction];
         // let params = rpc_params![json!({"events": [{"name": "CreateQuirkle", "members": [], "proof_ttl": 86400}]})];
         // let response: Result<String, _> = client.request("quible_sendTransaction", params).await;
-        let response = client.request_proof("foo".to_string(), "bar".to_string(), 0).await.unwrap();
-        dbg!("response: {:?}", response);
+        let result = client
+            .request_proof(
+
+            QuirkleRoot { bytes: [
+                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+                0x0, 0x0, 0x0, 0x0,
+                0x0, 0x0, 0x0, 0x0,
+                0x0, 0x0, 0x0, 0x0,
+                0x0, 0x0, 0x0, 0x0,
+            ] }
+                , "bar".to_string(), 0)
+            .await;
+        dbg!("response: {:?}", result);
 
         Ok(())
     }

@@ -9,6 +9,10 @@ async fn main() -> anyhow::Result<()> {
     let url = "http://localhost:9013";
     let client = HttpClient::builder().build(url)?;
     let transaction = types::Transaction {
+        author: [
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0,
+        ],
         events: vec![types::Event::CreateQuirkle {
             members: vec![],
             proof_ttl: 86400,

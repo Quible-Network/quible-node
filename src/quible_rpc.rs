@@ -20,12 +20,14 @@ pub trait QuibleRpc {
         &self,
         // TODO: define a type with custom serialize and deserialize
         //       logic that we can use for uint160 addresses
-        quirkle_root: String,
+        quirkle_root: types::QuirkleRoot,
         member_address: String,
         requested_at_block_number: u128,
     ) -> Result<types::QuirkleProof, ErrorObjectOwned>;
 
-    // TODO: request proof
+
+    // TODO: get quirkle roots
+
     // TODO: get block number
     // TODO: ...
 }
