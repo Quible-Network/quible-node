@@ -8,7 +8,7 @@ pub type BlockHash = [u8; 32];
 
 #[derive(Clone, Debug)]
 pub struct QuirkleRoot {
-    pub bytes: [u8; 32]
+    pub bytes: [u8; 32],
 }
 
 #[derive(Clone, Debug)]
@@ -23,7 +23,8 @@ impl Serialize for QuirkleRoot {
     {
         let hash = format!(
             "0x{}",
-            &self.bytes
+            &self
+                .bytes
                 .iter()
                 .map(|byte| format!("{:02x}", byte))
                 .collect::<String>()
@@ -48,9 +49,7 @@ impl<'de> Deserialize<'de> for QuirkleRoot {
 
         let byte_array: [u8; 32] = byte_vec.try_into().unwrap();
 
-        Ok(QuirkleRoot {
-            bytes: byte_array
-        })
+        Ok(QuirkleRoot { bytes: byte_array })
     }
 }
 

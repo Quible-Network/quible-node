@@ -89,17 +89,19 @@ async fn propose_block(block_number: u64, conn_arc: &Arc<Mutex<Connection>>) {
         for event in transaction.events {
             match event {
                 types::Event::CreateQuirkle { members, proof_ttl } => {
-                    let quirkle_count: u64 = conn_lock.query_row(
-                        "
+                    let quirkle_count: u64 = conn_lock
+                        .query_row(
+                            "
                         INSERT INTO author_quirkle_counts (author, count)
                         VALUES (?1, 1)
                         ON CONFLICT (author) DO UPDATE SET
                           count = count + 1
                         RETURNING count
                         ",
-                        [transaction.author],
-                        |row| row.get(0)
-                    ).unwrap();
+                            [transaction.author],
+                            |row| row.get(0),
+                        )
+                        .unwrap();
 
                     let quirkle_root = compute_quirkle_root(transaction.author, quirkle_count);
 
@@ -143,7 +145,7 @@ fn compute_quirkle_root(author: [u8; 20], contract_count: u64) -> types::Quirkle
 
     let quirkle_hash_vec = quirkle_data_hasher.finalize();
     types::QuirkleRoot {
-        bytes: quirkle_hash_vec.as_slice().try_into().unwrap()
+        bytes: quirkle_hash_vec.as_slice().try_into().unwrap(),
     }
 }
 
@@ -222,93 +224,73 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     ) -> Result<types::QuirkleProof, ErrorObjectOwned> {
         let db = &self.db.lock().unwrap();
 
-        let mut stmt = db
-            .prepare("SELECT block_number, transactions FROM blocks ORDER BY block_number ASC")
-            .unwrap();
+        let result: Result<(), rusqlite::Error> = db.query_row(
+            "
+            SELECT quirkle_root, address FROM quirkle_items
+            WHERE quirkle_root = ?1 AND address = ?2
+            ",
+            (quirkle_root.bytes, &member_address),
+            |_| Ok(()),
+        );
 
-        let mut members: Vec<String> = Vec::new();
-        let mut proof_ttl: u64 = 0;
-
-        let transactions_query = stmt
-            .query_map([], |row| {
-                let block_number = row.get::<_, u64>(0)?;
-                let data = row.get::<_, serde_json::value::Value>(1)?;
-                Ok((block_number, data))
-            })
-            .unwrap();
-
-        for row in transactions_query {
-            let (block_number, data) = row.map_err(|error| {
-                ErrorObjectOwned::owned(
-                    CALL_EXECUTION_FAILED_CODE,
-                    "call execution failed: failed to query",
-                    Some(error.to_string()),
-                )
-            })?;
-
-            let transactions: Vec<Transaction> = serde_json::from_value(data).unwrap();
-            for transaction in transactions {
-                for event in transaction.events {
-                    match event {
-                        types::Event::CreateQuirkle {
-                            members: inner_members,
-                            proof_ttl: inner_proof_ttl,
-                        } => {
-                            // TODO: use transaction nonce instead of block_number
-                            let inner_quirkle_root =
-                                compute_quirkle_root(transaction.author, block_number);
-
-                            if inner_quirkle_root.bytes == quirkle_root.bytes {
-                                members = inner_members;
-                                proof_ttl = inner_proof_ttl;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        if members.contains(&member_address) {
-            let expires_at: u64 = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_err(|e| {
-                    ErrorObjectOwned::owned(
-                        CALL_EXECUTION_FAILED_CODE,
-                        "call execution failed: could not generate timestamp",
-                        Some(e.to_string()),
+        match result {
+            Ok(()) => {
+                let proof_ttl: u64 = db
+                    .query_row(
+                        "
+                        SELECT proof_ttl FROM quirkle_proof_ttls
+                        WHERE quirkle_root = ?1
+                        ",
+                        [quirkle_root.bytes],
+                        |row| row.get(0),
                     )
-                })?
-                .add(Duration::from_secs(proof_ttl))
-                .as_secs();
+                    .unwrap();
 
-            let mut content = Vec::new();
+                let expires_at: u64 = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map_err(|e| {
+                        ErrorObjectOwned::owned(
+                            CALL_EXECUTION_FAILED_CODE,
+                            "call execution failed: could not generate timestamp",
+                            Some(e.to_string()),
+                        )
+                    })?
+                    .add(Duration::from_secs(proof_ttl))
+                    .as_secs();
 
-            // TODO: ensure that we're encoding the raw bytes of uint160
-            //       instead of concatenating the hexadecimal strings
-            content.extend_from_slice(&quirkle_root.bytes);
-            content.extend_from_slice(member_address.as_bytes());
-            content.extend_from_slice(&expires_at.to_le_bytes());
+                let mut content = Vec::new();
 
-            Ok(types::QuirkleProof {
-                quirkle_root,
-                member_address,
-                expires_at,
-                signature: types::QuirkleSignature {
-                    // TODO: pull in a real private key
-                    bls_signature: bls_signatures::PrivateKey::new([
-                        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                        0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                        0x0, 0x0,
-                    ])
-                    .sign(content),
-                },
-            })
-        } else {
-            Err(ErrorObjectOwned::owned(
+                content.extend_from_slice(&quirkle_root.bytes);
+                content.extend_from_slice(member_address.as_bytes());
+                content.extend_from_slice(&expires_at.to_le_bytes());
+
+                Ok(types::QuirkleProof {
+                    quirkle_root,
+                    member_address,
+                    expires_at,
+                    signature: types::QuirkleSignature {
+                        // TODO: pull in a real private key
+                        bls_signature: bls_signatures::PrivateKey::new([
+                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+                            0x0, 0x0, 0x0, 0x0,
+                        ])
+                        .sign(content),
+                    },
+                })
+            }
+
+            Err(rusqlite::Error::QueryReturnedNoRows) => Err(ErrorObjectOwned::owned(
                 CALL_EXECUTION_FAILED_CODE,
                 "call execution failed: could not verify membership",
                 Some("address not found in the quirkle"),
-            ))
+            )),
+
+            Err(e) => Err(ErrorObjectOwned::owned(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to query",
+                Some(e.to_string()),
+            )),
         }
     }
 }
@@ -487,9 +469,9 @@ mod tests {
         let client = HttpClient::builder().build(url)?;
 
         let author = [
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0,
-            ];
+            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0,
+        ];
 
         let transaction = Transaction {
             author,

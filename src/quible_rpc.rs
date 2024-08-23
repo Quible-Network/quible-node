@@ -25,7 +25,6 @@ pub trait QuibleRpc {
         requested_at_block_number: u128,
     ) -> Result<types::QuirkleProof, ErrorObjectOwned>;
 
-
     // TODO: get quirkle roots
 
     // TODO: get block number
