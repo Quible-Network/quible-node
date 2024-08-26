@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::ops::Add;
 use std::sync::{Arc, Mutex};
 use tokio::time::{sleep_until, Duration, Instant};
-use types::{Transaction, TransactionHash};
+use types::{Transaction, TransactionHash, BlockHash};
 // use jsonrpsee::core::client::ClientT;
 // use jsonrpsee::http_client::HttpClient;
 // use jsonrpsee::rpc_params;
@@ -13,9 +13,13 @@ use rusqlite::{Connection, Result};
 use sha3::{Digest, Keccak256};
 
 use quible_rpc::QuibleRpcServer;
+use quible_ecdsa_utils::recover_signer_unchecked;
+use quible_transaction_utils::compute_transaction_hash;
 
 pub mod quible_rpc;
 pub mod types;
+pub mod quible_ecdsa_utils;
+pub mod quible_transaction_utils;
 
 const SLOT_DURATION: Duration = Duration::from_secs(4);
 
@@ -86,24 +90,28 @@ async fn propose_block(block_number: u64, conn_arc: &Arc<Mutex<Connection>>) {
         .unwrap();
 
     for transaction in transactions {
+        let hash = compute_transaction_hash(&transaction.events);
+        let author = recover_signer_unchecked(&transaction.signature.bytes, &hash).unwrap();
+
         for event in transaction.events {
             match event {
                 types::Event::CreateQuirkle { members, proof_ttl } => {
+                    // TODO: replace usage of quirkle counts by utilizing UTXO addresses instead
                     let quirkle_count: u64 = conn_lock
                         .query_row(
                             "
-                        INSERT INTO author_quirkle_counts (author, count)
-                        VALUES (?1, 1)
-                        ON CONFLICT (author) DO UPDATE SET
-                          count = count + 1
-                        RETURNING count
-                        ",
-                            [transaction.author],
+                            INSERT INTO author_quirkle_counts (author, count)
+                            VALUES (?1, 1)
+                            ON CONFLICT (author) DO UPDATE SET
+                              count = count + 1
+                            RETURNING count
+                            ",
+                            [author.into_array()],
                             |row| row.get(0),
                         )
                         .unwrap();
 
-                    let quirkle_root = compute_quirkle_root(transaction.author, quirkle_count);
+                    let quirkle_root = compute_quirkle_root(author.into_array(), quirkle_count);
 
                     conn_lock
                         .execute(
@@ -136,8 +144,6 @@ pub struct QuibleRpcServerImpl {
     db: Arc<Mutex<Connection>>,
 }
 
-// TODO: use transaction nonce instead of block_number,
-//       instead of using quirkle contents
 fn compute_quirkle_root(author: [u8; 20], contract_count: u64) -> types::QuirkleRoot {
     let mut quirkle_data_hasher = Keccak256::new();
     quirkle_data_hasher.update(author);
@@ -149,32 +155,13 @@ fn compute_quirkle_root(author: [u8; 20], contract_count: u64) -> types::Quirkle
     }
 }
 
-fn compute_transaction_hash(transaction: Transaction) -> TransactionHash {
-    let mut transaction_data_hasher = Keccak256::new();
-
-    for event in transaction.events {
-        match event {
-            types::Event::CreateQuirkle { members, proof_ttl } => {
-                for member in members {
-                    transaction_data_hasher.update(member);
-                }
-
-                transaction_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(proof_ttl));
-            }
-        }
-    }
-
-    let transaction_hash_vec = transaction_data_hasher.finalize();
-    transaction_hash_vec.as_slice().try_into().unwrap()
-}
-
 // TODO: refactor this such that there is only a block_header parameter
 //       instead of individual parameters
 fn compute_block_hash(
     block_number: u64,
     timestamp: u64,
     transaction_hashes: Vec<TransactionHash>,
-) -> types::BlockHash {
+) -> BlockHash {
     let mut block_data_hasher = Keccak256::new();
 
     block_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(block_number));
@@ -194,7 +181,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
         &self,
         transaction: Transaction,
     ) -> Result<Transaction, ErrorObjectOwned> {
-        let transaction_hash = compute_transaction_hash(transaction.clone());
+        let transaction_hash = compute_transaction_hash(&transaction.events);
         let transaction_json = serde_json::to_string(&transaction).unwrap();
         let db = &self.db.lock().unwrap();
 
@@ -323,6 +310,7 @@ fn initialize_db(conn: &Connection) -> anyhow::Result<()> {
     conn.execute(
         // TODO: include state root blob
         // TODO: include transactions root blob
+        // TODO: refactor to have entire block_header
         "
         CREATE TABLE blocks (
           hash BLOB PRIMARY KEY,
@@ -379,15 +367,6 @@ async fn main() -> anyhow::Result<()> {
     let url = format!("http://{}", server_addr);
     println!("server listening at {}", url);
 
-    // TODO: move proposal loop into a thread or something async
-    // TODO: handle an incoming transaction over RPC
-    // TODO(surrealdb): start a transaction pool table
-    // TODO(surrealdb): insert incoming transactions into transaction pool
-    //
-    // TODO(surrealdb):
-    //   setup some kind of testing script that sends transactions and verifies
-    //   that the correct blocks are seen in the db
-
     let mut block_number = 0u64;
     let mut block_timestamp = Instant::now();
 
@@ -405,7 +384,10 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use crate::quible_rpc::QuibleRpcClient;
+    use alloy_primitives::FixedBytes;
     use jsonrpsee::http_client::HttpClient;
+    use types::ECDSASignature;
+    use quible_ecdsa_utils::{recover_signer_unchecked, sign_message};
 
     #[tokio::test]
     async fn test_send_transaction() -> anyhow::Result<()> {
@@ -418,16 +400,27 @@ mod tests {
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
-        let transaction = Transaction {
-            author: [
-                0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                0x0, 0x0, 0x0, 0x0,
-            ],
-            events: vec![types::Event::CreateQuirkle {
+        let signer_secret: [u8; 32] = [
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+        ];
+        let events = vec![types::Event::CreateQuirkle {
                 members: vec![],
                 proof_ttl: 86400,
-            }],
-        };
+            }];
+        let hash = compute_transaction_hash(&events);
+        let signature_bytes = sign_message(
+            FixedBytes::new(signer_secret),
+            FixedBytes::new(hash)
+        )?;
+        let signature = ECDSASignature { bytes: signature_bytes };
+        let transaction = Transaction { signature, events };
 
         // let params = rpc_params![transaction];
         // let params = rpc_params![json!({"events": [{"name": "CreateQuirkle", "members": [], "proof_ttl": 86400}]})];
@@ -468,31 +461,38 @@ mod tests {
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
 
-        let author = [
-            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0,
+        let signer_secret: [u8; 32] = [
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
+            0x0, 0x0, 0x0, 0x0,
         ];
-
-        let transaction = Transaction {
-            author,
-            events: vec![types::Event::CreateQuirkle {
+        let events = vec![types::Event::CreateQuirkle {
                 members: vec!["foo".to_string()],
                 proof_ttl: 86400,
-            }],
-        };
+            }];
+        let hash = compute_transaction_hash(&events);
+        let signature_bytes = sign_message(FixedBytes::new(signer_secret), FixedBytes::new(hash))?;
+        let signature = ECDSASignature { bytes: signature_bytes };
+        let author = recover_signer_unchecked(&signature_bytes, &hash)?;
+        let transaction = Transaction { signature, events };
 
         client.send_transaction(transaction).await.unwrap();
 
         propose_block(1, &conn_arc).await;
 
         let success_response = client
-            .request_proof(compute_quirkle_root(author, 1), "foo".to_string(), 0)
+            .request_proof(compute_quirkle_root(author.into_array(), 1), "foo".to_string(), 0)
             .await
             .unwrap();
         dbg!("success response: {:?}", success_response);
 
         let failure_response = client
-            .request_proof(compute_quirkle_root(author, 1), "bar".to_string(), 0)
+            .request_proof(compute_quirkle_root(author.into_array(), 1), "bar".to_string(), 0)
             .await;
 
         println!("failure response: {:?}", failure_response);

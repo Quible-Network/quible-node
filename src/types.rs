@@ -7,13 +7,44 @@ pub type TransactionHash = [u8; 32];
 pub type BlockHash = [u8; 32];
 
 #[derive(Clone, Debug)]
+pub struct QuirkleSignature {
+    pub bls_signature: Signature,
+}
+
+// TODO: privatize members and use as_bytes() method instead
+#[derive(Clone, Debug)]
 pub struct QuirkleRoot {
     pub bytes: [u8; 32],
 }
 
+// TODO: privatize members and use as_bytes() method instead
 #[derive(Clone, Debug)]
-pub struct QuirkleSignature {
-    pub bls_signature: Signature,
+pub struct ECDSASignature {
+    pub bytes: [u8; 65],
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct QuirkleProof {
+    pub quirkle_root: QuirkleRoot,
+    pub member_address: String,
+    pub expires_at: u64,
+    pub signature: QuirkleSignature,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Transaction {
+    pub signature: ECDSASignature,
+    pub events: Vec<Event>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "name")]
+pub enum Event {
+    CreateQuirkle {
+        // TODO: this should be a vector of Keccak256 hashes
+        members: Vec<String>,
+        proof_ttl: u64,
+    },
 }
 
 impl Serialize for QuirkleRoot {
@@ -94,28 +125,35 @@ impl<'de> Deserialize<'de> for QuirkleSignature {
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct QuirkleProof {
-    pub quirkle_root: QuirkleRoot,
-    pub member_address: String,
-    pub expires_at: u64,
-    pub signature: QuirkleSignature,
+impl Serialize for ECDSASignature {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where S: serde::Serializer {
+        let bytes = &self.bytes;
+        let hash = format!(
+            "{}",
+            bytes
+                .iter()
+                .map(|byte| format!("{:02x}", byte))
+                .collect::<String>()
+        );
+        serializer.serialize_str(&hash)
+    }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Transaction {
-    pub author: [u8; 20], // uint160
-    // TODO: include nonce
-    // TODO: include ECDSA signature
-    pub events: Vec<Event>,
-}
+impl<'de> Deserialize<'de> for ECDSASignature {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where D: serde::Deserializer<'de> {
+        let s: &str = Deserialize::deserialize(deserializer)?;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(tag = "name")]
-pub enum Event {
-    CreateQuirkle {
-        // TODO: this should be a vector of Keccak256 hashes
-        members: Vec<String>,
-        proof_ttl: u64,
-    },
+        // TODO: do this more efficiently because we're expecting only 65 bytes
+        let byte_vec: Vec<u8> = (0..s.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
+            .collect::<Result<Vec<u8>, std::num::ParseIntError>>()
+            .map_err(|e| serde::de::Error::custom(e))?;
+
+        let bytes: [u8; 65] = byte_vec.try_into().unwrap();
+
+        Ok(ECDSASignature { bytes })
+    }
 }
