@@ -84,7 +84,7 @@ pub struct Transaction {
 #[serde(tag = "name")]
 pub enum Event {
     CreateQuirkle {
-        // TODO: this should be a vector of Keccak256 hashes
+        // TODO(QUI-20): this should be a vector of Keccak256 hashes
         members: Vec<String>,
         proof_ttl: u64,
     },
@@ -114,7 +114,6 @@ impl<'de> Deserialize<'de> for QuirkleRoot {
     {
         let s: &str = Deserialize::deserialize(deserializer)?;
 
-        // TODO: do this more efficiently because we're expecting only 96 bytes
         let byte_vec: Vec<u8> = (2..s.len())
             .step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
@@ -151,7 +150,6 @@ impl<'de> Deserialize<'de> for QuirkleSignature {
     {
         let s: &str = Deserialize::deserialize(deserializer)?;
 
-        // TODO: do this more efficiently because we're expecting only 96 bytes
         let byte_vec: Vec<u8> = (0..s.len())
             .step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16))
@@ -192,7 +190,6 @@ impl<'de> Deserialize<'de> for ECDSASignature {
     {
         let s: String = Deserialize::deserialize(deserializer)?;
 
-        // TODO: do this more efficiently because we're expecting only 65 bytes
         let byte_vec: Vec<u8> = (0..s.len())
             .step_by(2)
             .map(|i| u8::from_str_radix(&s[i..i + 2], 16))

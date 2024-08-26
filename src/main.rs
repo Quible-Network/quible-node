@@ -5,9 +5,6 @@ use std::ops::Add;
 use std::sync::{Arc, Mutex};
 use tokio::time::{sleep_until, Duration, Instant};
 use types::{BlockHash, Transaction, TransactionHash};
-// use jsonrpsee::core::client::ClientT;
-// use jsonrpsee::http_client::HttpClient;
-// use jsonrpsee::rpc_params;
 use jsonrpsee::{server::Server, types::ErrorObjectOwned};
 use rusqlite::{Connection, Result};
 use sha3::{Digest, Keccak256};
@@ -74,10 +71,8 @@ async fn propose_block(block_number: u64, conn_arc: &Arc<Mutex<Connection>>) {
         serde_json::value::Value::Array(transactions_json),
     );
 
-    // TODO: generate merkle root of transactions
-    // TODO: refactor to use unified blocker header type;
-    //       insert block_header as a single column
-    // TODO(gossip): broadcast block header and transaction list
+    // TODO(QUI-15): generate merkle root of transactions
+    // TODO(QUI-17): refactor to use unified blocker header type
 
     conn_lock
         .execute(
@@ -96,7 +91,7 @@ async fn propose_block(block_number: u64, conn_arc: &Arc<Mutex<Connection>>) {
         for event in transaction.events {
             match event {
                 types::Event::CreateQuirkle { members, proof_ttl } => {
-                    // TODO: replace usage of quirkle counts by utilizing UTXO addresses instead
+                    // TODO(QUI-18): replace usage of quirkle counts by utilizing UTXO addresses instead
                     let quirkle_count: u64 = conn_lock
                         .query_row(
                             "
@@ -155,8 +150,8 @@ fn compute_quirkle_root(author: [u8; 20], contract_count: u64) -> types::Quirkle
     }
 }
 
-// TODO: refactor this such that there is only a block_header parameter
-//       instead of individual parameters
+// TODO(QUI-17): refactor this such that there is only a block_header parameter
+//               instead of individual parameters
 fn compute_block_hash(
     block_number: u64,
     timestamp: u64,
@@ -256,7 +251,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                     member_address,
                     expires_at,
                     signature: types::QuirkleSignature {
-                        // TODO: pull in a real private key
+                        // TODO(QUI-19): pull in a real private key
                         bls_signature: bls_signatures::PrivateKey::new([
                             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
                             0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
@@ -308,9 +303,8 @@ fn initialize_db(conn: &Connection) -> anyhow::Result<()> {
     )?;
 
     conn.execute(
-        // TODO: include state root blob
-        // TODO: include transactions root blob
-        // TODO: refactor to have entire block_header
+        // TODO(QUI-15): include transactions root blob
+        // TODO(QUI-17): refactor to have entire block_header
         "
         CREATE TABLE blocks (
           hash BLOB PRIMARY KEY,

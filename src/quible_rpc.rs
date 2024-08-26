@@ -18,15 +18,8 @@ pub trait QuibleRpc {
     #[method(name = "quible_requestProof")]
     async fn request_proof(
         &self,
-        // TODO: define a type with custom serialize and deserialize
-        //       logic that we can use for uint160 addresses
         quirkle_root: types::QuirkleRoot,
         member_address: String,
         requested_at_block_number: u128,
     ) -> Result<types::QuirkleProof, ErrorObjectOwned>;
-
-    // TODO: get quirkle roots
-
-    // TODO: get block number
-    // TODO: ...
 }
