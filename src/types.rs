@@ -6,21 +6,64 @@ use serde::{Deserialize, Serialize};
 pub type TransactionHash = [u8; 32];
 pub type BlockHash = [u8; 32];
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct QuirkleSignature {
     pub bls_signature: Signature,
 }
 
+impl std::fmt::Debug for QuirkleSignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            &self
+                .bls_signature
+                .as_bytes()
+                .iter()
+                .map(|byte| format!("{:02x}", byte))
+                .collect::<String>()
+        )
+    }
+}
+
 // TODO: privatize members and use as_bytes() method instead
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct QuirkleRoot {
     pub bytes: [u8; 32],
 }
 
+impl std::fmt::Debug for QuirkleRoot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            &self
+                .bytes
+                .iter()
+                .map(|byte| format!("{:02x}", byte))
+                .collect::<String>()
+        )
+    }
+}
+
 // TODO: privatize members and use as_bytes() method instead
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct ECDSASignature {
     pub bytes: [u8; 65],
+}
+
+impl std::fmt::Debug for ECDSASignature {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            &self
+                .bytes
+                .iter()
+                .map(|byte| format!("{:02x}", byte))
+                .collect::<String>()
+        )
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -127,7 +170,9 @@ impl<'de> Deserialize<'de> for QuirkleSignature {
 
 impl Serialize for ECDSASignature {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-        where S: serde::Serializer {
+    where
+        S: serde::Serializer,
+    {
         let bytes = &self.bytes;
         let hash = format!(
             "{}",
@@ -142,8 +187,10 @@ impl Serialize for ECDSASignature {
 
 impl<'de> Deserialize<'de> for ECDSASignature {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-        where D: serde::Deserializer<'de> {
-        let s: &str = Deserialize::deserialize(deserializer)?;
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s: String = Deserialize::deserialize(deserializer)?;
 
         // TODO: do this more efficiently because we're expecting only 65 bytes
         let byte_vec: Vec<u8> = (0..s.len())

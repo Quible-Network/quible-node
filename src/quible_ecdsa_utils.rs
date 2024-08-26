@@ -1,6 +1,9 @@
 use alloy_primitives::{keccak256, Address, B256};
 pub(crate) use k256::ecdsa::Error;
-use k256::{ecdsa::{RecoveryId, SigningKey, VerifyingKey}, elliptic_curve::bigint::{ArrayDecoding, Encoding}};
+use k256::{
+    ecdsa::{RecoveryId, SigningKey, VerifyingKey},
+    elliptic_curve::bigint::{ArrayDecoding, Encoding},
+};
 
 /// Recovers the address of the sender using secp256k1 pubkey recovery.
 ///
@@ -51,9 +54,11 @@ pub fn public_key_to_address(public: VerifyingKey) -> Address {
 
 #[cfg(test)]
 mod tests {
-    use rand;
-    use crate::quible_ecdsa_utils::{public_key_to_address, sign_message, recover_signer_unchecked};
+    use crate::quible_ecdsa_utils::{
+        public_key_to_address, recover_signer_unchecked, sign_message,
+    };
     use alloy_primitives::{keccak256, B256};
+    use rand;
 
     #[test]
     fn sanity_ecrecover_call_k256() {

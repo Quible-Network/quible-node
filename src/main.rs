@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::ops::Add;
 use std::sync::{Arc, Mutex};
 use tokio::time::{sleep_until, Duration, Instant};
-use types::{Transaction, TransactionHash, BlockHash};
+use types::{BlockHash, Transaction, TransactionHash};
 // use jsonrpsee::core::client::ClientT;
 // use jsonrpsee::http_client::HttpClient;
 // use jsonrpsee::rpc_params;
@@ -12,14 +12,14 @@ use jsonrpsee::{server::Server, types::ErrorObjectOwned};
 use rusqlite::{Connection, Result};
 use sha3::{Digest, Keccak256};
 
-use quible_rpc::QuibleRpcServer;
 use quible_ecdsa_utils::recover_signer_unchecked;
+use quible_rpc::QuibleRpcServer;
 use quible_transaction_utils::compute_transaction_hash;
 
-pub mod quible_rpc;
-pub mod types;
 pub mod quible_ecdsa_utils;
+pub mod quible_rpc;
 pub mod quible_transaction_utils;
+pub mod types;
 
 const SLOT_DURATION: Duration = Duration::from_secs(4);
 
@@ -384,10 +384,10 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use super::*;
     use crate::quible_rpc::QuibleRpcClient;
-    use alloy_primitives::FixedBytes;
+    use alloy_primitives::{FixedBytes, B256};
     use jsonrpsee::http_client::HttpClient;
-    use types::ECDSASignature;
     use quible_ecdsa_utils::{recover_signer_unchecked, sign_message};
+    use types::ECDSASignature;
 
     #[tokio::test]
     async fn test_send_transaction() -> anyhow::Result<()> {
@@ -400,26 +400,19 @@ mod tests {
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
-        let signer_secret: [u8; 32] = [
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-        ];
+        let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
         let events = vec![types::Event::CreateQuirkle {
-                members: vec![],
-                proof_ttl: 86400,
-            }];
+            members: vec![],
+            proof_ttl: 86400,
+        }];
         let hash = compute_transaction_hash(&events);
         let signature_bytes = sign_message(
-            FixedBytes::new(signer_secret),
-            FixedBytes::new(hash)
+            B256::from_slice(&signer_secret.to_bytes()[..]),
+            FixedBytes::new(hash),
         )?;
-        let signature = ECDSASignature { bytes: signature_bytes };
+        let signature = ECDSASignature {
+            bytes: signature_bytes,
+        };
         let transaction = Transaction { signature, events };
 
         // let params = rpc_params![transaction];
@@ -461,23 +454,19 @@ mod tests {
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
 
-        let signer_secret: [u8; 32] = [
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-            0x0, 0x0, 0x0, 0x0,
-        ];
+        let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
         let events = vec![types::Event::CreateQuirkle {
-                members: vec!["foo".to_string()],
-                proof_ttl: 86400,
-            }];
+            members: vec!["foo".to_string()],
+            proof_ttl: 86400,
+        }];
         let hash = compute_transaction_hash(&events);
-        let signature_bytes = sign_message(FixedBytes::new(signer_secret), FixedBytes::new(hash))?;
-        let signature = ECDSASignature { bytes: signature_bytes };
+        let signature_bytes = sign_message(
+            B256::from_slice(&signer_secret.to_bytes()[..]),
+            FixedBytes::new(hash),
+        )?;
+        let signature = ECDSASignature {
+            bytes: signature_bytes,
+        };
         let author = recover_signer_unchecked(&signature_bytes, &hash)?;
         let transaction = Transaction { signature, events };
 
@@ -486,13 +475,21 @@ mod tests {
         propose_block(1, &conn_arc).await;
 
         let success_response = client
-            .request_proof(compute_quirkle_root(author.into_array(), 1), "foo".to_string(), 0)
+            .request_proof(
+                compute_quirkle_root(author.into_array(), 1),
+                "foo".to_string(),
+                0,
+            )
             .await
             .unwrap();
         dbg!("success response: {:?}", success_response);
 
         let failure_response = client
-            .request_proof(compute_quirkle_root(author.into_array(), 1), "bar".to_string(), 0)
+            .request_proof(
+                compute_quirkle_root(author.into_array(), 1),
+                "bar".to_string(),
+                0,
+            )
             .await;
 
         println!("failure response: {:?}", failure_response);

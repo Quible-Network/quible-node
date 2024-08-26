@@ -1,4 +1,4 @@
-use crate::types::{TransactionHash, Event};
+use crate::types::{Event, TransactionHash};
 // use jsonrpsee::core::client::ClientT;
 // use jsonrpsee::http_client::HttpClient;
 // use jsonrpsee::rpc_params;
