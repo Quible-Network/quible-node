@@ -9,6 +9,12 @@ use jsonrpsee::{server::Server, types::ErrorObjectOwned};
 use rusqlite::{Connection, Result};
 use sha3::{Digest, Keccak256};
 
+use serde::{Deserialize, Serialize};
+use surrealdb::engine::local::Mem;
+use surrealdb::sql::Thing;
+use surrealdb::Surreal;
+
+
 use quible_ecdsa_utils::recover_signer_unchecked;
 use quible_rpc::QuibleRpcServer;
 use quible_transaction_utils::compute_transaction_hash;
@@ -19,6 +25,30 @@ pub mod quible_transaction_utils;
 pub mod types;
 
 const SLOT_DURATION: Duration = Duration::from_secs(4);
+
+#[derive(Debug, Serialize)]
+struct Name<'a> {
+    first: &'a str,
+    last: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct Person<'a> {
+    title: &'a str,
+    name: Name<'a>,
+    marketing: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct Responsibility {
+    marketing: bool,
+}
+
+#[derive(Debug, Deserialize)]
+struct Record {
+    #[allow(dead_code)]
+    id: Thing,
+}
 
 async fn propose_block(block_number: u64, conn_arc: &Arc<Mutex<Connection>>) {
     println!("new block! {}", block_number);
@@ -352,6 +382,20 @@ fn initialize_db(conn: &Connection) -> anyhow::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+
+    let db = Surreal::new::<Mem>(()).await?;
+    db.use_ns("test").use_db("test").await?;
+    let created: Vec<Record> = db.create("person").content(Person {
+        title: "founder",
+        name: Name {
+            first: "tobie",
+            last: "smith",
+        },
+        marketing: true,
+    }).await?;
+
+    dbg!(created);
+
     let conn = Connection::open_in_memory()?;
     initialize_db(&conn)?;
 
