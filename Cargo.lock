@@ -3270,6 +3270,7 @@ dependencies = [
  "bls-signatures",
  "bls12_381",
  "bytemuck",
+ "hex",
  "jsonrpsee",
  "k256",
  "once_cell",
