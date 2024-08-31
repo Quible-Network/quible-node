@@ -2,11 +2,10 @@ use jsonrpsee::core::async_trait;
 use jsonrpsee::types::error::CALL_EXECUTION_FAILED_CODE;
 use std::net::SocketAddr;
 use std::ops::Add;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tokio::time::{sleep_until, Duration, Instant};
 use types::{BlockHash, Transaction, TransactionHash};
 use jsonrpsee::{server::Server, types::ErrorObjectOwned};
-use rusqlite::{Connection, Result};
 use sha3::{Digest, Keccak256};
 use hex;
 
@@ -16,6 +15,8 @@ use surrealdb::sql::Thing;
 use surrealdb::Surreal;
 use surrealdb::engine::local::Db;
 use surrealdb::error::Db as ErrorDb;
+use tower_http::cors::{Any, CorsLayer};
+use hyper::Method;
 
 use quible_ecdsa_utils::recover_signer_unchecked;
 use quible_rpc::QuibleRpcServer;
@@ -253,9 +254,20 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
 }
 
 async fn run_derive_server(db: &Arc<Surreal<Db>>, port: u16) -> anyhow::Result<SocketAddr> {
+    let cors = CorsLayer::new()
+		// Allow `POST` when accessing the resource
+		.allow_methods([Method::POST])
+		// Allow requests from any origin
+		.allow_origin(Any)
+		.allow_headers([hyper::header::CONTENT_TYPE]);
+    let middleware = tower::ServiceBuilder::new().layer(cors);
+
     let server = Server::builder()
+        .set_http_middleware(middleware)
         .build(format!("127.0.0.1:{}", port).parse::<SocketAddr>()?)
         .await?;
+
+
 
     let addr = server.local_addr()?;
     let handle = server.start(QuibleRpcServerImpl { db: db.clone() }.into_rpc());

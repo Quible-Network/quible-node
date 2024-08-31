@@ -2484,7 +2484,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4979f22fdb869068da03c9f7528f8297c6fd2606bc3a4affe42e6a823fdb8da4"
 dependencies = [
  "cfg-if",
- "windows-targets 0.48.5",
+ "windows-targets 0.52.6",
 ]
 
 [[package]]
@@ -3271,6 +3271,7 @@ dependencies = [
  "bls12_381",
  "bytemuck",
  "hex",
+ "hyper 1.4.1",
  "jsonrpsee",
  "k256",
  "once_cell",
@@ -3281,6 +3282,8 @@ dependencies = [
  "sha3",
  "surrealdb",
  "tokio",
+ "tower",
+ "tower-http",
 ]
 
 [[package]]
@@ -5020,6 +5023,22 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
+]
+
+[[package]]
+name = "tower-http"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e9cd434a998747dd2c4276bc96ee2e0c7a2eadf3cae88e52be55a05fa9053f5"
+dependencies = [
+ "bitflags 2.6.0",
+ "bytes",
+ "http 1.1.0",
+ "http-body 1.0.1",
+ "http-body-util",
+ "pin-project-lite",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]

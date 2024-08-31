@@ -20,7 +20,6 @@ pub fn recover_signer_unchecked(sig: &[u8; 65], msg: &[u8; 32]) -> Result<Addres
         signature = sig_normalized;
         recid ^= 1;
     }
-    println!("the byte {:02x}", recid);
     let recid = RecoveryId::from_byte(recid).expect("recovery ID is valid");
 
     // recover key
