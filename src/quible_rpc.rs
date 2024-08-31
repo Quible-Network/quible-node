@@ -9,13 +9,13 @@ use crate::types;
 #[rpc(server, client, namespace = "quible")]
 pub trait QuibleRpc {
     // for some reason the macro makes RpcServerServer
-    #[method(name = "quible_sendTransaction")]
+    #[method(name = "sendTransaction")]
     async fn send_transaction(
         &self,
         transaction: types::Transaction,
     ) -> Result<types::Transaction, ErrorObjectOwned>;
 
-    #[method(name = "quible_requestProof")]
+    #[method(name = "requestProof")]
     async fn request_proof(
         &self,
         quirkle_root: types::QuirkleRoot,
