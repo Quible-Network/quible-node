@@ -4,7 +4,7 @@ use std::net::SocketAddr;
 use std::ops::Add;
 use std::sync::Arc;
 use tokio::time::{sleep_until, Duration, Instant};
-use types::{BlockHash, Transaction, TransactionHash};
+use types::{BlockHash, Transaction, TransactionHash, PendingTransactionRow, SurrealID, BlockRow};
 use jsonrpsee::{server::Server, types::ErrorObjectOwned};
 use sha3::{Digest, Keccak256};
 use hex;
@@ -40,17 +40,17 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
 
     let result = async {
         // Fetch pending transactions
-        let transactions: Vec<(TransactionHash, Transaction)> = db_arc
-            .query("SELECT hash, data FROM pending_transactions")
-            .await?
-            .take(0)?;
+        let pending_transaction_rows: Vec<PendingTransactionRow> = db_arc.select("pending_transactions").await?;
 
         let mut transaction_hashes: Vec<TransactionHash> = Vec::new();
         let mut transactions_json: Vec<serde_json::Value> = Vec::new();
 
-        for (hash, transaction) in &transactions {
-            transaction_hashes.push(*hash);
-            transactions_json.push(serde_json::to_value(transaction).unwrap());
+        for row in &pending_transaction_rows {
+            let hash_bytes_vec = hex::decode(row.hash.clone())?;
+            let mut hash_bytes = [0u8; 32];
+            hash_bytes[..32].copy_from_slice(&hash_bytes_vec[..32]);
+            transaction_hashes.push(hash_bytes);
+            transactions_json.push(serde_json::to_value(row.clone().data).unwrap());
         }
 
         let timestamp: u64 = std::time::SystemTime::now()
@@ -63,14 +63,26 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
         let block_hash = compute_block_hash(block_number, timestamp, transaction_hashes);
 
         // Insert new block
+        /*
         db_arc.query("INSERT INTO blocks (hash, block_number, timestamp, transactions) VALUES ($hash, $block_number, $timestamp, $transactions)")
             .bind(("hash", block_hash))
             .bind(("block_number", block_number))
             .bind(("timestamp", timestamp))
-            .bind(("transactions", serde_json::Value::Array(transactions_json)))
+            .bind(("transactions", transactions_json))
+            .await?;
+        */
+
+        db_arc.create::<Vec<BlockRow>>("blocks")
+            .content(BlockRow {
+                hash: hex::encode(block_hash),
+                block_number,
+                timestamp,
+                transactions: transactions_json
+            })
             .await?;
 
-        for (_, transaction) in transactions {
+        for row in pending_transaction_rows {
+            let transaction = row.data;
             let hash = compute_transaction_hash(&transaction.events);
             let author = recover_signer_unchecked(&transaction.signature.bytes, &hash).unwrap();
 
@@ -78,25 +90,35 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
                 match event {
                     types::Event::CreateQuirkle { members, proof_ttl } => {
                         // Update quirkle count
-                        let quirkle_count: u64 = db_arc
+                        let quirkle_count_result: Option<u64> = db_arc
                             .query("UPDATE author_quirkle_counts SET count += 1 WHERE author = $author RETURN count")
-                            .bind(("author", author.into_array()))
+                            .bind(("author", hex::encode(author)))
                             .await?
-                            .take::<Option<u64>>(0)?
-                            .unwrap_or(1); 
+                            .take::<Option<u64>>((0, "count"))?;
+
+                        let quirkle_count = match quirkle_count_result {
+                            Some(count) => count,
+                            None => {
+                                db_arc
+                                    .query("INSERT INTO author_quirkle_counts (author, count) VALUES ($author, 1)")
+                                    .bind(("author", hex::encode(author)))
+                                    .await?;
+                                1
+                            }
+                        };
 
                         let quirkle_root = compute_quirkle_root(author.into_array(), quirkle_count);
 
                         // Insert quirkle proof TTL
                         db_arc.query("INSERT INTO quirkle_proof_ttls (quirkle_root, proof_ttl) VALUES ($quirkle_root, $proof_ttl)")
-                            .bind(("quirkle_root", quirkle_root.bytes))
+                            .bind(("quirkle_root", hex::encode(quirkle_root.bytes)))
                             .bind(("proof_ttl", proof_ttl))
                             .await?;
 
                         // Insert quirkle items
                         for member in members {
                             db_arc.query("INSERT INTO quirkle_items (quirkle_root, address) VALUES ($quirkle_root, $address)")
-                                .bind(("quirkle_root", quirkle_root.bytes))
+                                .bind(("quirkle_root", hex::encode(quirkle_root.bytes)))
                                 .bind(("address", member))
                                 .await?;
                         }
@@ -155,24 +177,31 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
         transaction: Transaction,
     ) -> Result<Transaction, ErrorObjectOwned> {
         let transaction_hash = compute_transaction_hash(&transaction.events);
-        let transaction_json = serde_json::to_string(&transaction).unwrap();
+        // let transaction_json = serde_json::to_value(&transaction).unwrap();
 
         let transaction_hash_hex = hex::encode(transaction_hash);
-        let result: Result<Option<Thing>, surrealdb::Error> = self.db
-            .create(("pending_transactions", transaction_hash_hex))
-            .content(serde_json::json!({
-                "hash": transaction_hash,
-                "data": transaction_json,
-            }))
+        let result: Result<Vec<PendingTransactionRow>, surrealdb::Error> = self.db
+            .create("pending_transactions")
+            .content(PendingTransactionRow {
+                id: SurrealID(Thing::from(("pending_transactions".to_string(), transaction_hash_hex.clone().to_string()))),
+                // hash: surrealdb::sql::Bytes::from(transaction_hash.to_vec()),
+                hash: transaction_hash_hex,
+                data: transaction.clone()
+            })
             .await;
 
         match result {
-            Ok(Some(_)) => Ok(transaction),
-            Ok(None) => Err(ErrorObjectOwned::owned::<String>(
-                CALL_EXECUTION_FAILED_CODE,
-                "call execution failed: record not created",
-                None,
-            )),
+            Ok(pending_transaction_rows) => { 
+                if pending_transaction_rows.len() == 0 {
+                    Err(ErrorObjectOwned::owned::<String>(
+                            CALL_EXECUTION_FAILED_CODE,
+                            "call execution failed: transaction already inserted",
+                            None
+                    ))
+                } else { 
+                    Ok(transaction)
+                }
+            },
             Err(error) => Err(ErrorObjectOwned::owned::<String>(
                 CALL_EXECUTION_FAILED_CODE,
                 "call execution failed: failed to insert",
@@ -188,7 +217,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     ) -> Result<types::QuirkleProof, ErrorObjectOwned> {
         let result: Result<Option<serde_json::Value>, surrealdb::Error> = self.db
             .query("SELECT * FROM quirkle_items WHERE quirkle_root = $quirkle_root AND address = $address")
-            .bind(("quirkle_root", quirkle_root.bytes))
+            .bind(("quirkle_root", hex::encode(quirkle_root.bytes)))
             .bind(("address", &member_address))
             .await
             .and_then(|mut response| response.take(0));
@@ -197,9 +226,9 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
             Ok(Some(_)) => {
                 let proof_ttl: Result<Option<u64>, surrealdb::Error> = self.db
                     .query("SELECT proof_ttl FROM quirkle_proof_ttls WHERE quirkle_root = $quirkle_root")
-                    .bind(("quirkle_root", quirkle_root.bytes))
+                    .bind(("quirkle_root", hex::encode(quirkle_root.bytes)))
                     .await
-                    .and_then(|mut response| response.take(0));
+                    .and_then(|mut response| response.take((0, "proof_ttl")));
 
                 let proof_ttl = proof_ttl.map_err(|e| ErrorObjectOwned::owned(
                     CALL_EXECUTION_FAILED_CODE,
@@ -282,13 +311,21 @@ async fn initialize_db(db: &Surreal<Db>) -> surrealdb::Result<()> {
     db.query("DEFINE TABLE blocks SCHEMAFULL;").await?;
     db.query("DEFINE FIELD hash ON blocks TYPE string;").await?;
     db.query("DEFINE FIELD block_number ON blocks TYPE int;").await?;
-    db.query("DEFINE FIELD timestamp ON blocks TYPE datetime;").await?;
+    // db.query("DEFINE FIELD timestamp ON blocks TYPE datetime;").await?;
+    db.query("DEFINE FIELD timestamp ON blocks TYPE int;").await?;
     db.query("DEFINE FIELD transactions ON blocks TYPE array;").await?;
+    db.query("DEFINE FIELD transactions.* ON blocks FLEXIBLE TYPE object;").await?;
 
     // Create table for pending transactions
     db.query("DEFINE TABLE pending_transactions SCHEMAFULL;").await?;
+    // db.query("DEFINE FIELD hash ON pending_transactions TYPE bytes;").await?;
     db.query("DEFINE FIELD hash ON pending_transactions TYPE string;").await?;
     db.query("DEFINE FIELD data ON pending_transactions TYPE object;").await?;
+    db.query("DEFINE FIELD data.signature ON pending_transactions TYPE string;").await?;
+    db.query("DEFINE FIELD data.events ON pending_transactions TYPE array;").await?;
+
+    // TODO: define the event type more thoroughly here to avoid the use of FLEXIBLE
+    db.query("DEFINE FIELD data.events.* ON pending_transactions FLEXIBLE TYPE object;").await?;
 
     // Create table for author quirkle counts
     db.query("DEFINE TABLE author_quirkle_counts SCHEMAFULL;").await?;
@@ -380,14 +417,13 @@ mod tests {
         dbg!("response: {:?}", response);
 
         // Query pending transactions from SurrealDB
-        let pending_transactions: Vec<(String, serde_json::Value)> = db_arc
-            .query("SELECT hash, data FROM pending_transactions")
-            .await?
-            .take(0)?;
+        let pending_transaction_rows: Vec<PendingTransactionRow> = db_arc
+            .select("pending_transactions")
+            .await?;
 
-        for (hash, data) in pending_transactions {
-            println!("Transaction Hash: {}", hash);
-            println!("Transaction Data: {}", serde_json::to_string_pretty(&data)?);
+        for row in pending_transaction_rows {
+            println!("Transaction Hash: {}", row.hash);
+            println!("Transaction Data: {}", serde_json::to_string_pretty(&row.data)?);
         }
 
         Ok(())

@@ -6,6 +6,26 @@ use serde::{Deserialize, Serialize};
 pub type TransactionHash = [u8; 32];
 pub type BlockHash = [u8; 32];
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SurrealID(pub surrealdb::sql::Thing);
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingTransactionRow {
+    pub id: SurrealID,
+    pub hash: String,
+    // pub hash: surrealdb::sql::Bytes,
+    // pub hash: TransactionHash,
+    pub data: Transaction
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockRow {
+    pub hash: String,
+    pub block_number: u64,
+    pub timestamp: u64,
+    pub transactions: Vec<serde_json::Value>
+}
+
 #[derive(Clone)]
 pub struct QuirkleSignature {
     pub bls_signature: Signature,
