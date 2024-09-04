@@ -9,12 +9,19 @@ pub fn compute_transaction_hash(events: &Vec<Event>) -> TransactionHash {
 
     for event in events {
         match event {
-            Event::CreateQuirkle { members, proof_ttl } => {
+            Event::CreateQuirkle { members, proof_ttl, slug } => {
                 for member in members {
                     transaction_data_hasher.update(member);
                 }
 
                 transaction_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(*proof_ttl));
+
+                match slug {
+                    Some(text) => {
+                        transaction_data_hasher.update(text);
+                    }
+                    _ => {}
+                }
             }
         }
     }

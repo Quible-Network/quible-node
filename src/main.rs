@@ -89,7 +89,7 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
 
             for event in transaction.events {
                 match event {
-                    types::Event::CreateQuirkle { members, proof_ttl } => {
+                    types::Event::CreateQuirkle { members, proof_ttl, slug } => {
                         // Update quirkle count
                         let quirkle_count_result: Option<u64> = db_arc
                             .query("UPDATE author_quirkle_counts SET count += 1 WHERE author = $author RETURN count")
@@ -108,7 +108,7 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
                             }
                         };
 
-                        let quirkle_root = compute_quirkle_root(author.into_array(), quirkle_count);
+                        let quirkle_root = compute_quirkle_root(author.into_array(), quirkle_count, slug);
 
                         // Insert quirkle proof TTL
                         db_arc.query("INSERT INTO quirkle_proof_ttls (quirkle_root, proof_ttl) VALUES ($quirkle_root, $proof_ttl)")
@@ -139,10 +139,19 @@ pub struct QuibleRpcServerImpl {
     db: Arc<Surreal<Db>>,
 }
 
-fn compute_quirkle_root(author: [u8; 20], contract_count: u64) -> types::QuirkleRoot {
+fn compute_quirkle_root(author: [u8; 20], contract_count: u64, slug: Option<String>) -> types::QuirkleRoot {
     let mut quirkle_data_hasher = Keccak256::new();
     quirkle_data_hasher.update(author);
-    quirkle_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(contract_count));
+
+    match slug {
+        Some(text) => {
+            quirkle_data_hasher.update(text);
+        }
+
+        None => {
+            quirkle_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(contract_count));
+        }
+    }
 
     let quirkle_hash_vec = quirkle_data_hasher.finalize();
     types::QuirkleRoot {
@@ -427,6 +436,7 @@ mod tests {
         let events = vec![types::Event::CreateQuirkle {
             members: vec![],
             proof_ttl: 86400,
+            slug: None
         }];
         let hash = compute_transaction_hash(&events);
         let signature_bytes = sign_message(
@@ -475,6 +485,7 @@ mod tests {
         let events = vec![types::Event::CreateQuirkle {
             members: vec!["foo".to_string()],
             proof_ttl: 86400,
+            slug: None,
         }];
         let hash = compute_transaction_hash(&events);
         let signature_bytes = sign_message(
@@ -493,7 +504,7 @@ mod tests {
 
         let success_response = client
             .request_proof(
-                compute_quirkle_root(author.into_array(), 1),
+                compute_quirkle_root(author.into_array(), 1, None),
                 "foo".to_string(),
                 0,
             )
@@ -503,7 +514,7 @@ mod tests {
 
         let failure_response = client
             .request_proof(
-                compute_quirkle_root(author.into_array(), 1),
+                compute_quirkle_root(author.into_array(), 1, None),
                 "bar".to_string(),
                 0,
             )
