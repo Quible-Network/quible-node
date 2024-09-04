@@ -3182,6 +3182,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "hex",
+ "hex-literal",
  "hyper 1.4.1",
  "jsonrpsee",
  "k256",
