@@ -8,6 +8,7 @@ use types::{BlockHash, Transaction, TransactionHash, PendingTransactionRow, Surr
 use jsonrpsee::{server::Server, types::ErrorObjectOwned};
 use sha3::{Digest, Keccak256};
 use hex;
+use alloy_primitives::{FixedBytes, B256};
 
 use serde::{Deserialize, Serialize};
 use surrealdb::engine::local::Mem;
@@ -18,7 +19,7 @@ use surrealdb::error::Db as ErrorDb;
 use tower_http::cors::{Any, CorsLayer};
 use hyper::Method;
 
-use quible_ecdsa_utils::recover_signer_unchecked;
+use quible_ecdsa_utils::{recover_signer_unchecked, sign_message};
 use quible_rpc::QuibleRpcServer;
 use quible_transaction_utils::compute_transaction_hash;
 
@@ -248,23 +249,41 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                     .add(Duration::from_secs(proof_ttl))
                     .as_secs();
 
+                let mut proof_data_hasher = Keccak256::new();
+                proof_data_hasher.update(&quirkle_root.bytes);
+                proof_data_hasher.update(member_address.as_bytes());
+                proof_data_hasher.update(&expires_at.to_le_bytes());
+
+                /*
                 let mut content = Vec::new();
                 content.extend_from_slice(&quirkle_root.bytes);
                 content.extend_from_slice(member_address.as_bytes());
                 content.extend_from_slice(&expires_at.to_le_bytes());
+                */
+
+                let proof_hash_vec = proof_data_hasher.finalize();
+                let proof_hash = proof_hash_vec.as_slice().try_into().unwrap();
+
+                // TODO(QUI-19): pull in a real private key
+                let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+
+                let signature_bytes = sign_message(
+                    B256::from_slice(&signer_secret.to_bytes()[..]),
+                    FixedBytes::new(proof_hash),
+                ).map_err(|e| {
+                    ErrorObjectOwned::owned(
+                        CALL_EXECUTION_FAILED_CODE,
+                        "call execution failed: could not sign proof",
+                        Some(e.to_string()),
+                    )
+                })?;
 
                 Ok(types::QuirkleProof {
                     quirkle_root,
                     member_address,
                     expires_at,
                     signature: types::QuirkleSignature {
-                        // TODO(QUI-19): pull in a real private key
-                        bls_signature: bls_signatures::PrivateKey::new([
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-                            0x0, 0x0, 0x0, 0x0,
-                        ])
-                        .sign(content),
+                        ecdsa_signature_bytes: signature_bytes
                     },
                 })
             }
