@@ -432,7 +432,7 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_addr = run_derive_server(&db_arc, 9013).await?;
+        let server_addr = run_derive_server(&db_arc, 0).await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
