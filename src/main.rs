@@ -126,6 +126,10 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
                     }
                 }
             }
+
+            db_arc.query("DELETE FROM pending_transactions WHERE id = $id")
+                .bind(("id", row.id))
+                .await?;
         }
 
         Ok(()) as Result<(), Box<dyn std::error::Error>>
