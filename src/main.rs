@@ -118,7 +118,7 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
 
                         // Insert quirkle items
                         for member in members {
-                            db_arc.query("INSERT INTO quirkle_items (quirkle_root, address) VALUES ($quirkle_root, $address)")
+                            db_arc.query("INSERT INTO quirkle_items (quirkle_root, address) VALUES ($quirkle_root, string::lowercase($address))")
                                 .bind(("quirkle_root", hex::encode(quirkle_root.bytes)))
                                 .bind(("address", member))
                                 .await?;
@@ -226,7 +226,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
         _requested_at_block_number: u128,
     ) -> Result<types::QuirkleProof, ErrorObjectOwned> {
         let result: Result<Option<serde_json::Value>, surrealdb::Error> = self.db
-            .query("SELECT * FROM quirkle_items WHERE quirkle_root = $quirkle_root AND address = $address")
+            .query("SELECT * FROM quirkle_items WHERE quirkle_root = $quirkle_root AND address = string::lowercase($address)")
             .bind(("quirkle_root", hex::encode(quirkle_root.bytes)))
             .bind(("address", &member_address))
             .await
