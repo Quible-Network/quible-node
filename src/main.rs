@@ -184,7 +184,6 @@ fn compute_block_hash(
 }
 
 #[async_trait]
-#[async_trait]
 impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     async fn send_transaction(
         &self,
@@ -262,17 +261,15 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                     .add(Duration::from_secs(proof_ttl))
                     .as_secs();
 
-                let mut proof_data_hasher = Keccak256::new();
-                proof_data_hasher.update(&quirkle_root.bytes);
-                proof_data_hasher.update(member_address.as_bytes());
-                proof_data_hasher.update(&expires_at.to_le_bytes());
+                let mut proof_data = Vec::<u8>::new();
+                proof_data.extend(&quirkle_root.bytes);
+                proof_data.extend(member_address.as_bytes());
+                proof_data.extend(&expires_at.to_be_bytes());
 
-                /*
-                let mut content = Vec::new();
-                content.extend_from_slice(&quirkle_root.bytes);
-                content.extend_from_slice(member_address.as_bytes());
-                content.extend_from_slice(&expires_at.to_le_bytes());
-                */
+                let mut proof_data_hasher = Keccak256::new();
+                let prefix_str = format!("\x19Ethereum Signed Message:\n{}", proof_data.len());
+                proof_data_hasher.update(prefix_str);
+                proof_data_hasher.update(proof_data);
 
                 let proof_hash_vec = proof_data_hasher.finalize();
                 let proof_hash = proof_hash_vec.as_slice().try_into().unwrap();
