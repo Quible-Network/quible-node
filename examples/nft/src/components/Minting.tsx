@@ -59,7 +59,7 @@ const Minting = (props: { accountAddress: string, tokenAddress: string }) => {
 
     await waitForTransactionReceipt(config, { hash })
     refetch()
-  }, [props.accountAddress, props.tokenAddress]);
+  }, [props.accountAddress, props.tokenAddress, config, refetch, writeContractAsync]);
 
   if (!isSuccess) { return <div>Loading...</div> }
 

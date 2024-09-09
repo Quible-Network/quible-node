@@ -48,7 +48,6 @@ const getTransactionHash = (members: string[], slug: string) => {
 
 const LaunchToken = (props: {
   accountAddress: string;
-  tokenAddress: string;
 }) => {
   const [contractAddress, setContractAddress] = useState<string | null>(null);
   const [isPending, setIsPending] = useState(false);
@@ -118,7 +117,7 @@ const LaunchToken = (props: {
 
     setContractAddress(newContractAddress as unknown as string);
     setIsPending(false);
-  }, [props.accountAddress, accessList]);
+  }, [props.accountAddress, accessList, config, signMessageAsync, deployContractAsync]);
 
   const handleAccessListChange = (list: REL.Row[]) => {
     setAccessList(list.map((row) => row.id as string));
