@@ -1,9 +1,10 @@
-use bls_signatures::{Serialize as BlsSerialize, Signature};
 use serde::{Deserialize, Serialize};
 
 // TODO: verify that the Keccak256 hashes are only 32 bytes.
 //       they might have more bytes.
 pub type TransactionHash = [u8; 32];
+
+#[allow(dead_code)]
 pub type BlockHash = [u8; 32];
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,7 +29,7 @@ pub struct BlockRow {
 
 #[derive(Clone)]
 pub struct QuirkleSignature {
-    pub bls_signature: Signature,
+    pub ecdsa_signature_bytes: [u8; 65],
 }
 
 impl std::fmt::Debug for QuirkleSignature {
@@ -37,8 +38,7 @@ impl std::fmt::Debug for QuirkleSignature {
             f,
             "{}",
             &self
-                .bls_signature
-                .as_bytes()
+                .ecdsa_signature_bytes
                 .iter()
                 .map(|byte| format!("{:02x}", byte))
                 .collect::<String>()
@@ -151,7 +151,7 @@ impl Serialize for QuirkleSignature {
     where
         S: serde::Serializer,
     {
-        let bytes = &self.bls_signature.as_bytes();
+        let bytes = &self.ecdsa_signature_bytes;
         let hash = format!(
             "{}",
             bytes
@@ -176,12 +176,10 @@ impl<'de> Deserialize<'de> for QuirkleSignature {
             .collect::<Result<Vec<u8>, std::num::ParseIntError>>()
             .map_err(|e| serde::de::Error::custom(e))?;
 
-        let byte_array: [u8; 96] = byte_vec.try_into().unwrap();
-
-        let g2_affine = bls12_381::G2Affine::from_compressed(&byte_array).unwrap();
+        let byte_array: [u8; 65] = byte_vec.try_into().unwrap();
 
         Ok(QuirkleSignature {
-            bls_signature: Signature::from(g2_affine),
+            ecdsa_signature_bytes: byte_array,
         })
     }
 }

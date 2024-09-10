@@ -6,8 +6,6 @@ edition = "2021"
 [dependencies]
 alloy-primitives = { version = "0.8.0", features = ["k256"] }
 anyhow = "1.0.86"
-bls-signatures = "0.15.0"
-bls12_381 = "0.8.0"
 bytemuck = "1.17.0"
 hex = "0.4.3"
 hyper = "1.4.1"
