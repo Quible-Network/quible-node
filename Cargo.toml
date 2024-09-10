@@ -8,6 +8,7 @@ alloy-primitives = { version = "0.8.0", features = ["k256"] }
 anyhow = "1.0.86"
 bytemuck = "1.17.0"
 hex = "0.4.3"
+hex-literal = "0.4.1"
 hyper = "1.4.1"
 jsonrpsee = { version = "0.24.3", features = ["http-client", "server", "client", "macros"] }
 k256 = { version = "0.13.3", features = ["serde", "ecdsa"] }

@@ -265,7 +265,16 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                 let proof_hash = proof_hash_vec.as_slice().try_into().unwrap();
 
                 // TODO(QUI-19): pull in a real private key
-                let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+                // TODO: construct the key before starting the server
+                let signer_secret = k256::ecdsa::SigningKey::from_bytes(&hex_literal::hex!(
+                    "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                ).into()).map_err(|e| {
+                    ErrorObjectOwned::owned(
+                        CALL_EXECUTION_FAILED_CODE,
+                        "call execution failed: failed to construct signing key",
+                        Some(e.to_string()),
+                    )
+                })?;
 
                 let signature_bytes = sign_message(
                     B256::from_slice(&signer_secret.to_bytes()[..]),
