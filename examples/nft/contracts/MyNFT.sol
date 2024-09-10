@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "@quible/verifier-solidity-sdk/contracts/QuibleVerifier.sol";
 
 function bytesToHexString(bytes memory data) pure returns (string memory) {
     bytes memory converted = new bytes(data.length * 2);
@@ -34,21 +35,13 @@ contract MyNFT is ERC721, ERC721Enumerable, Ownable {
     }
 
     modifier membersOnly(address to, uint64 expires_at, bytes memory signature) {
-        string memory hexAddress = bytesToHexString(abi.encodePacked(bytes20(to)));
-        bytes memory message = abi.encodePacked(quirkleRoot, hexAddress, expires_at);
-        bytes memory data = abi.encodePacked("\x19Ethereum Signed Message:\n", Strings.toString(message.length), message);
-        bytes32 hash = keccak256(data);
-        bytes32 signedMessage = MessageHashUtils.toEthSignedMessageHash(hash);
-        address signer = ECDSA.recover(hash, signature);
-        require(signer == 0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266, "signature invalid");
-        require(block.timestamp < expires_at, "signature expired");
+        QuibleVerifier.verifyProof(quirkleRoot, to, expires_at, signature);
         _;
     }
 
     function safeMint(address to, uint64 expires_at, bytes memory signature) membersOnly(to, expires_at, signature) public {
         uint256 tokenId = _nextTokenId++;
         _safeMint(to, tokenId);
-
     }
 
     // The following functions are overrides required by Solidity.

@@ -5,7 +5,7 @@ import { useAccount } from 'wagmi';
 import Head from 'next/head';
 import styles from '../../styles/Home.module.css';
 
-export default () => {
+const TokenPage = () => {
   const router = useRouter()
   const account = useAccount()
 
@@ -28,3 +28,5 @@ export default () => {
     </div>
   );
 }
+
+export default TokenPage;
