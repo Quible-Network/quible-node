@@ -5,20 +5,33 @@ use crate::types::{Event, TransactionHash};
 use sha3::{Digest, Keccak256};
 
 pub fn compute_transaction_hash(events: &Vec<Event>) -> TransactionHash {
-    let mut transaction_data_hasher = Keccak256::new();
+    let mut data = Vec::<u8>::new();
 
     for event in events {
         match event {
-            Event::CreateQuirkle { members, proof_ttl } => {
+            Event::CreateQuirkle { members, proof_ttl, slug } => {
                 for member in members {
-                    transaction_data_hasher.update(member);
+                    data.extend(member.clone().into_bytes());
                 }
 
-                transaction_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(*proof_ttl));
+                // transaction_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(*proof_ttl));
+
+                /*
+                match slug {
+                    Some(text) => {
+                        transaction_data_hasher.update(text);
+                    }
+                    _ => {}
+                }
+                */
             }
         }
     }
 
+    let mut transaction_data_hasher = Keccak256::new();
+    let prefix_str = format!("\x19Ethereum Signed Message:\n{}", data.len());
+    transaction_data_hasher.update(prefix_str);
+    transaction_data_hasher.update(data);
     let transaction_hash_vec = transaction_data_hasher.finalize();
     transaction_hash_vec.as_slice().try_into().unwrap()
 }

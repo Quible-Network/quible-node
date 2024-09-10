@@ -107,6 +107,7 @@ pub enum Event {
         // TODO(QUI-20): this should be a vector of Keccak256 hashes
         members: Vec<String>,
         proof_ttl: u64,
+        slug: Option<String>,
     },
 }
 

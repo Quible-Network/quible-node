@@ -89,7 +89,7 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
 
             for event in transaction.events {
                 match event {
-                    types::Event::CreateQuirkle { members, proof_ttl } => {
+                    types::Event::CreateQuirkle { members, proof_ttl, slug } => {
                         // Update quirkle count
                         let quirkle_count_result: Option<u64> = db_arc
                             .query("UPDATE author_quirkle_counts SET count += 1 WHERE author = $author RETURN count")
@@ -108,7 +108,7 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
                             }
                         };
 
-                        let quirkle_root = compute_quirkle_root(author.into_array(), quirkle_count);
+                        let quirkle_root = compute_quirkle_root(author.into_array(), quirkle_count, slug);
 
                         // Insert quirkle proof TTL
                         db_arc.query("INSERT INTO quirkle_proof_ttls (quirkle_root, proof_ttl) VALUES ($quirkle_root, $proof_ttl)")
@@ -118,7 +118,7 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
 
                         // Insert quirkle items
                         for member in members {
-                            db_arc.query("INSERT INTO quirkle_items (quirkle_root, address) VALUES ($quirkle_root, $address)")
+                            db_arc.query("INSERT INTO quirkle_items (quirkle_root, address) VALUES ($quirkle_root, string::lowercase($address))")
                                 .bind(("quirkle_root", hex::encode(quirkle_root.bytes)))
                                 .bind(("address", member))
                                 .await?;
@@ -126,6 +126,10 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
                     }
                 }
             }
+
+            db_arc.query("DELETE FROM pending_transactions WHERE id = $id")
+                .bind(("id", row.id))
+                .await?;
         }
 
         Ok(()) as Result<(), Box<dyn std::error::Error>>
@@ -139,10 +143,19 @@ pub struct QuibleRpcServerImpl {
     db: Arc<Surreal<Db>>,
 }
 
-fn compute_quirkle_root(author: [u8; 20], contract_count: u64) -> types::QuirkleRoot {
+fn compute_quirkle_root(author: [u8; 20], contract_count: u64, slug: Option<String>) -> types::QuirkleRoot {
     let mut quirkle_data_hasher = Keccak256::new();
     quirkle_data_hasher.update(author);
-    quirkle_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(contract_count));
+
+    match slug {
+        Some(text) => {
+            quirkle_data_hasher.update(text);
+        }
+
+        None => {
+            quirkle_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(contract_count));
+        }
+    }
 
     let quirkle_hash_vec = quirkle_data_hasher.finalize();
     types::QuirkleRoot {
@@ -170,7 +183,6 @@ fn compute_block_hash(
     block_hash_vec.as_slice().try_into().unwrap()
 }
 
-#[async_trait]
 #[async_trait]
 impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     async fn send_transaction(
@@ -217,7 +229,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
         _requested_at_block_number: u128,
     ) -> Result<types::QuirkleProof, ErrorObjectOwned> {
         let result: Result<Option<serde_json::Value>, surrealdb::Error> = self.db
-            .query("SELECT * FROM quirkle_items WHERE quirkle_root = $quirkle_root AND address = $address")
+            .query("SELECT * FROM quirkle_items WHERE quirkle_root = $quirkle_root AND address = string::lowercase($address)")
             .bind(("quirkle_root", hex::encode(quirkle_root.bytes)))
             .bind(("address", &member_address))
             .await
@@ -249,17 +261,15 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                     .add(Duration::from_secs(proof_ttl))
                     .as_secs();
 
-                let mut proof_data_hasher = Keccak256::new();
-                proof_data_hasher.update(&quirkle_root.bytes);
-                proof_data_hasher.update(member_address.as_bytes());
-                proof_data_hasher.update(&expires_at.to_le_bytes());
+                let mut proof_data = Vec::<u8>::new();
+                proof_data.extend(&quirkle_root.bytes);
+                proof_data.extend(member_address.as_bytes());
+                proof_data.extend(&expires_at.to_be_bytes());
 
-                /*
-                let mut content = Vec::new();
-                content.extend_from_slice(&quirkle_root.bytes);
-                content.extend_from_slice(member_address.as_bytes());
-                content.extend_from_slice(&expires_at.to_le_bytes());
-                */
+                let mut proof_data_hasher = Keccak256::new();
+                let prefix_str = format!("\x19Ethereum Signed Message:\n{}", proof_data.len());
+                proof_data_hasher.update(prefix_str);
+                proof_data_hasher.update(proof_data);
 
                 let proof_hash_vec = proof_data_hasher.finalize();
                 let proof_hash = proof_hash_vec.as_slice().try_into().unwrap();
@@ -419,7 +429,7 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_addr = run_derive_server(&db_arc, 9013).await?;
+        let server_addr = run_derive_server(&db_arc, 0).await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
@@ -427,6 +437,7 @@ mod tests {
         let events = vec![types::Event::CreateQuirkle {
             members: vec![],
             proof_ttl: 86400,
+            slug: None
         }];
         let hash = compute_transaction_hash(&events);
         let signature_bytes = sign_message(
@@ -475,6 +486,7 @@ mod tests {
         let events = vec![types::Event::CreateQuirkle {
             members: vec!["foo".to_string()],
             proof_ttl: 86400,
+            slug: None,
         }];
         let hash = compute_transaction_hash(&events);
         let signature_bytes = sign_message(
@@ -493,7 +505,7 @@ mod tests {
 
         let success_response = client
             .request_proof(
-                compute_quirkle_root(author.into_array(), 1),
+                compute_quirkle_root(author.into_array(), 1, None),
                 "foo".to_string(),
                 0,
             )
@@ -503,7 +515,7 @@ mod tests {
 
         let failure_response = client
             .request_proof(
-                compute_quirkle_root(author.into_array(), 1),
+                compute_quirkle_root(author.into_array(), 1, None),
                 "bar".to_string(),
                 0,
             )

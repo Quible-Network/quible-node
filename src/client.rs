@@ -21,6 +21,7 @@ async fn main() -> anyhow::Result<()> {
     let events = vec![types::Event::CreateQuirkle {
         members: vec!["foo".to_string()],
         proof_ttl: 86400,
+        slug: None,
     }];
     let hash = compute_transaction_hash(&events);
     let signature_bytes = sign_message(FixedBytes::new(signer_secret), FixedBytes::new(hash))?;
