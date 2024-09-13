@@ -27,3 +27,10 @@ tower-http = { version = "0.5.2", features = ["cors"] }
 [[bin]]
 name = "client"
 path = "src/client.rs"
+
+[profile.release]
+opt-level = 'z'     # Optimize for size
+lto = true          # Enable link-time optimization
+codegen-units = 1   # Reduce number of codegen units to increase optimizations
+panic = 'abort'     # Abort on panic
+strip = true        # Strip symbols from binary
