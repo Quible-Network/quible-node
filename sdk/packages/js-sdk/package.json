@@ -1,0 +1,14 @@
+{
+  "name": "@quible/js-sdk",
+  "version": "1.0.0",
+  "description": "TypeScript SDK for handling simple interactions with the Quible Network",
+  "main": "lib/index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Tenor Biel",
+  "license": "MIT",
+  "dependencies": {
+    "@noble/hashes": "^1.5.0"
+  }
+}
