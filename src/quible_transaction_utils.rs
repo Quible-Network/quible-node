@@ -14,9 +14,11 @@ pub fn compute_transaction_hash(events: &Vec<Event>) -> TransactionHash {
                     data.extend(member.clone().into_bytes());
                 }
 
+                // TODO(QUI-35): including proof_ttl in tx hash
                 // transaction_data_hasher.update(bytemuck::cast::<u64, [u8; 8]>(*proof_ttl));
 
                 /*
+                // TODO(QUI-35): including slug in tx hash
                 match slug {
                     Some(text) => {
                         transaction_data_hasher.update(text);
