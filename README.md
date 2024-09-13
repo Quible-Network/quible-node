@@ -1,9 +1,17 @@
 # Deployment
 
-#### Prerequisites
+#### Prerequisites (MacOS)
 
-1. You must have Docker installed and running on your machine.
-2. [INSERT SYSTEM REQUIREMENTS HERE]
+```
+brew tap messense/macos-cross-toolchains
+# install x86_64-unknown-linux-gnu toolchain
+brew install x86_64-unknown-linux-gnu
+```
+
+```
+# build for linux x86_64
+RUSTFLAGS="-C link-args=-fstack-protector-all -lssp" CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER=x86_64-unknown-linux-gnu-gcc cargo build --release --target x86_64-unknown-linux-gnu
+```
 
 #### Instructions (Linux x86_64)
 
