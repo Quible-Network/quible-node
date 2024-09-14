@@ -15,6 +15,14 @@ Use this command to build the binary:
 
     cargo build --features surrealdb/protocol-ws --release --target=x86_64-unknown-linux-gnu
 
+# Using docker-compose
+
+Once you have built a binary, you can quickly get the Ubuntu-like environment running (without installing SurrealDB) by using Docker Compose.
+
+Use this command to get started:
+
+    docker-compose up
+
 # Using the docker image
 
 The docker image is intended for replicating an Ubuntu-like environment for development.

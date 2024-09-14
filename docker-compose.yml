@@ -1,0 +1,28 @@
+version: '3'
+services:
+  quible-node:
+    # restart: on-failure
+    build:
+      context: .
+    platform: linux/x86_64
+    ports:
+      - '9013:9013'
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    environment:
+      QUIBLE_DATABASE_URL: ws://host.docker.internal:8000
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    entrypoint: ["/surreal", "start", "file:/mydata/mydatabase.db"]
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./data:/mydata/mydatabase.db
+    healthcheck:
+      test: ["CMD", "/surreal", "is-ready"]
+      interval: 1s
+      timeout: 10s
+      retries: 5
