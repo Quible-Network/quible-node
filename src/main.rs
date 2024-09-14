@@ -1,3 +1,4 @@
+use std::env;
 use jsonrpsee::core::async_trait;
 use jsonrpsee::types::error::CALL_EXECUTION_FAILED_CODE;
 use std::net::SocketAddr;
@@ -11,10 +12,10 @@ use hex;
 use alloy_primitives::{FixedBytes, B256};
 
 use serde::{Deserialize, Serialize};
-use surrealdb::engine::local::Mem;
 use surrealdb::sql::Thing;
+use surrealdb::engine::any;
+use surrealdb::engine::any::Any as AnyDb;
 use surrealdb::Surreal;
-use surrealdb::engine::local::Db;
 use surrealdb::error::Db as ErrorDb;
 use tower_http::cors::{Any, CorsLayer};
 use hyper::Method;
@@ -36,7 +37,7 @@ struct Record {
     id: Thing,
 }
 
-async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
+async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<AnyDb>>) {
     println!("new block! {}", block_number);
 
     let result = async {
@@ -140,7 +141,7 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<Db>>) {
     }
 }
 pub struct QuibleRpcServerImpl {
-    db: Arc<Surreal<Db>>,
+    db: Arc<Surreal<AnyDb>>,
 }
 
 fn compute_quirkle_root(author: [u8; 20], contract_count: u64, slug: Option<String>) -> types::QuirkleRoot {
@@ -320,7 +321,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     }
 }
 
-async fn run_derive_server(db: &Arc<Surreal<Db>>, port: u16) -> anyhow::Result<SocketAddr> {
+async fn run_derive_server(db: &Arc<Surreal<AnyDb>>, port: u16) -> anyhow::Result<SocketAddr> {
     let cors = CorsLayer::new()
 		// Allow `POST` when accessing the resource
 		.allow_methods([Method::POST])
@@ -344,7 +345,7 @@ async fn run_derive_server(db: &Arc<Surreal<Db>>, port: u16) -> anyhow::Result<S
     Ok(addr)
 }
 
-async fn initialize_db(db: &Surreal<Db>) -> surrealdb::Result<()> {
+async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
     // Create table for blocks
     db.query("DEFINE TABLE blocks SCHEMAFULL;").await?;
     db.query("DEFINE FIELD hash ON blocks TYPE string;").await?;
@@ -385,9 +386,9 @@ async fn initialize_db(db: &Surreal<Db>) -> surrealdb::Result<()> {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-
+    let endpoint = env::var("QUIBLE_DATABASE_URL").unwrap_or_else(|_| "memory".to_owned());
     // surrealdb init
-    let db = Surreal::new::<Mem>(()).await?;
+    let db = any::connect(endpoint).await?;
     db.use_ns("quible").use_db("quible_node").await?;
     initialize_db(&db).await?;
 
@@ -417,13 +418,11 @@ mod tests {
     use jsonrpsee::http_client::HttpClient;
     use quible_ecdsa_utils::{recover_signer_unchecked, sign_message};
     use types::ECDSASignature;
-    use surrealdb::Surreal;
-    use surrealdb::engine::local::Mem;
 
     #[tokio::test]
     async fn test_send_transaction() -> anyhow::Result<()> {
         // Initialize SurrealDB
-        let db = Surreal::new::<Mem>(()).await?;
+        let db = any::connect("memory").await?;
         db.use_ns("quible").use_db("quible_node").await?;
         initialize_db(&db).await?;
 
@@ -471,7 +470,7 @@ mod tests {
     #[tokio::test]
     async fn test_request_proof() -> anyhow::Result<()> {
 
-        let db = Surreal::new::<Mem>(()).await?;
+        let db = any::connect("memory").await?;
         db.use_ns("quible").use_db("quible_node").await?;
         initialize_db(&db).await?;
 
