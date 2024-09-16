@@ -1,0 +1,10 @@
+[Unit]
+Description=Running a dedicated Quible Node
+
+[Service]
+ExecStart=/usr/share/quible/quible-node
+Environment=QUIBLE_DATABASE_URL=ws://localhost:8000
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

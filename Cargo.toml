@@ -2,6 +2,9 @@
 name = "quible-node"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+description = "A blockchain providing real-time set membership attestations"
+authors = ["quible team"]
 
 [dependencies]
 alloy-primitives = { version = "0.8.0", features = ["k256"] }
@@ -30,6 +33,18 @@ surrealdb = { version = "1.5.4", features = ["kv-mem"] }
 [[bin]]
 name = "client"
 path = "src/client.rs"
+
+[package.metadata.deb]
+maintainer-scripts = "debian/"
+systemd-units = { enable = true }
+depends = "systemd, surreal"
+assets = [
+    [
+        "target/x86_64-unknown-linux-gnu/release/quible-node",
+        "usr/share/quible/quible-node",
+        "755",
+    ]
+]
 
 [profile.release]
 opt-level = 'z'     # Optimize for size
