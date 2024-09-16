@@ -15,6 +15,14 @@ Use this command to build the binary:
 
     cargo build --features surrealdb/protocol-ws --release --target=x86_64-unknown-linux-gnu
 
+## Building a debian package
+
+Ensure you have cargo-deb installed (`cargo install cargo-deb`).
+
+After building the binary, you can build the debian package with this command:
+
+    cargo deb --no-build --target=x86_64-unknown-linux-gnu
+
 # Using docker-compose
 
 Once you have built a binary, you can quickly get the Ubuntu-like environment running (without installing SurrealDB) by using Docker Compose.
