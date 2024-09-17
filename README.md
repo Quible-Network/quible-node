@@ -13,7 +13,7 @@ In order to build a binary on MacOS, follow the steps from the [messense/homebre
 
 Use this command to build the binary:
 
-    cargo build --features surrealdb/protocol-ws --release --target=x86_64-unknown-linux-gnu
+    cargo build --config .cargo/macos-cross.toml --features surrealdb/protocol-ws --release --target=x86_64-unknown-linux-gnu
 
 ## Building a debian package
 

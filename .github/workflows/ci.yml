@@ -1,0 +1,28 @@
+name: Cargo Build & Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env: 
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build_and_test:
+    name: Rust project - latest
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup update stable && rustup default stable
+      - run: cargo install cargo-deb
+      - run: cargo test --verbose
+      - run: cargo build --features surrealdb/protocol-ws --release --target=x86_64-unknown-linux-gnu --verbose
+      - run: cargo deb --no-build --target=x86_64-unknown-linux-gnu
+      - name: Archive debian artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-package
+          path: target/x86_64-unknown-linux-gnu/debian/*.deb
