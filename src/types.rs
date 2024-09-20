@@ -27,6 +27,12 @@ pub struct BlockRow {
     pub transactions: Vec<serde_json::Value>
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackerPing {
+    pub peer_id: String,
+    pub timestamp: u64,
+}
+
 #[derive(Clone)]
 pub struct QuirkleSignature {
     pub ecdsa_signature_bytes: [u8; 65],

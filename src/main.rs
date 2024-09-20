@@ -5,7 +5,7 @@ use std::net::SocketAddr;
 use std::ops::Add;
 use std::sync::Arc;
 use tokio::{select, time::{sleep_until, Duration, Instant}};
-use types::{BlockHash, Transaction, TransactionHash, PendingTransactionRow, SurrealID, BlockRow};
+use types::{BlockHash, Transaction, TransactionHash, PendingTransactionRow, SurrealID, BlockRow, TrackerPing};
 use jsonrpsee::{server::Server, types::ErrorObjectOwned};
 use sha3::{Digest, Keccak256};
 use hex;
@@ -346,6 +346,14 @@ async fn run_derive_server(db: &Arc<Surreal<AnyDb>>, port: u16) -> anyhow::Resul
     Ok(addr)
 }
 
+async fn initialize_tracker_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
+    db.query("DEFINE TABLE tracker_pings SCHEMAFULL;").await?;
+    db.query("DEFINE FIELD peer_id ON tracker_pings TYPE string;").await?;
+    db.query("DEFINE FIELD timestamp ON tracker_pings TYPE int;").await?;
+
+    Ok(())
+}
+
 async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
     // Create table for blocks
     db.query("DEFINE TABLE blocks SCHEMAFULL;").await?;
@@ -395,6 +403,10 @@ async fn main() -> anyhow::Result<()> {
     let db = any::connect(endpoint).await?;
     db.use_ns("quible").use_db("quible_node").await?;
     initialize_db(&db).await?;
+
+    if let None = leader_addr {
+        initialize_tracker_db(&db).await?;
+    }
 
     let db_arc = Arc::new(db);
     let server_addr = run_derive_server(&db_arc, port).await?;
@@ -461,7 +473,21 @@ async fn main() -> anyhow::Result<()> {
 
             event = swarm.select_next_some() => match event {
                 SwarmEvent::NewListenAddr { address, .. } => println!("libp2p listening on {address:?}"),
-                SwarmEvent::Behaviour(event) => println!("{event:?}"),
+                SwarmEvent::Behaviour(libp2p::ping::Event { peer, result: Ok(_), .. }) => {
+                    let timestamp: u64 = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_err(|e| {
+                            ErrorDb::Thrown(format!("Failed to generate timestamp: {}", e).into())
+                        })?
+                    .as_secs();
+
+                    db_arc.create::<Vec<TrackerPing>>("tracker_pings")
+                        .content(TrackerPing {
+                            peer_id: peer.to_base58(),
+                            timestamp
+                        })
+                    .await?;
+                },
 
                 // TODO(QUI-46): enable debug log level
                 SwarmEvent::OutgoingConnectionError { .. } => println!("dial failure: {event:?}"),
