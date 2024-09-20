@@ -16,8 +16,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - run: rustup update stable && rustup default stable
-      - run: cargo install cargo-deb
+      - run: rustup toolchain install stable --profile minimal --no-self-update
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo install cargo-deb --locked
       - run: cargo test --verbose
       - run: cargo build --features surrealdb/protocol-ws --release --target=x86_64-unknown-linux-gnu --verbose
       - run: cargo deb --no-build --target=x86_64-unknown-linux-gnu
