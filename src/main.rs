@@ -149,7 +149,7 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<AnyDb>>) {
 }
 pub struct QuibleRpcServerImpl {
     db: Arc<Surreal<AnyDb>>,
-    node_signer_key: [u8; 32]
+    node_signer_key: [u8; 32],
 }
 
 fn compute_quirkle_root(
@@ -343,7 +343,11 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     }
 }
 
-async fn run_derive_server(node_signer_key: [u8; 32], db: &Arc<Surreal<AnyDb>>, port: u16) -> anyhow::Result<SocketAddr> {
+async fn run_derive_server(
+    node_signer_key: [u8; 32],
+    db: &Arc<Surreal<AnyDb>>,
+    port: u16,
+) -> anyhow::Result<SocketAddr> {
     let cors = CorsLayer::new()
         // Allow `POST` when accessing the resource
         .allow_methods([Method::POST])
@@ -358,7 +362,13 @@ async fn run_derive_server(node_signer_key: [u8; 32], db: &Arc<Surreal<AnyDb>>, 
         .await?;
 
     let addr = server.local_addr()?;
-    let handle = server.start(QuibleRpcServerImpl { db: db.clone(), node_signer_key }.into_rpc());
+    let handle = server.start(
+        QuibleRpcServerImpl {
+            db: db.clone(),
+            node_signer_key,
+        }
+        .into_rpc(),
+    );
 
     tokio::spawn(handle.stopped());
 
@@ -445,7 +455,10 @@ async fn main() -> anyhow::Result<()> {
 
     let mut signing_key_decoded = [0u8; 32];
     hex::decode_to_slice(signing_key_hex.clone(), &mut signing_key_decoded)?;
-    assert!(signing_key_hex.len() == 64, "unexpected length for QUIBLE_SIGNER_KEY");
+    assert!(
+        signing_key_hex.len() == 64,
+        "unexpected length for QUIBLE_SIGNER_KEY"
+    );
 
     let port: u16 = env::var("QUIBLE_PORT")
         .unwrap_or_else(|_| "9013".to_owned())
@@ -465,17 +478,15 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let db_arc = Arc::new(db);
-    let server_addr = run_derive_server(
-        signing_key_decoded,
-        &db_arc, port
-        ).await?;
+    let server_addr = run_derive_server(signing_key_decoded, &db_arc, port).await?;
     let url = format!("http://{}", server_addr);
     println!("server listening at {}", url);
 
     let mut block_number = 0u64;
     let mut block_timestamp = Instant::now();
 
-    let keypair: libp2p_identity::ecdsa::Keypair = libp2p_identity::ecdsa::SecretKey::try_from_bytes(signing_key_decoded)?.into();
+    let keypair: libp2p_identity::ecdsa::Keypair =
+        libp2p_identity::ecdsa::SecretKey::try_from_bytes(signing_key_decoded)?.into();
 
     let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair.into())
         .with_tokio()
@@ -580,7 +591,10 @@ mod tests {
 
         let server_addr = run_derive_server(
             hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
-            &db_arc, 0).await?;
+            &db_arc,
+            0,
+        )
+        .await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
@@ -631,7 +645,10 @@ mod tests {
 
         let server_addr = run_derive_server(
             hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
-            &db_arc, 0).await?;
+            &db_arc,
+            0,
+        )
+        .await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
