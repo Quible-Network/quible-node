@@ -1,25 +1,31 @@
-use std::env;
+use alloy_primitives::{FixedBytes, B256};
+use futures::prelude::stream::StreamExt;
+use hex;
+use hyper::Method;
 use jsonrpsee::core::async_trait;
 use jsonrpsee::types::error::CALL_EXECUTION_FAILED_CODE;
+use jsonrpsee::{server::Server, types::ErrorObjectOwned};
+use libp2p::{multiaddr, noise, ping, swarm::SwarmEvent, tcp, yamux};
+use serde::{Deserialize, Serialize};
+use sha3::{Digest, Keccak256};
+use std::env;
 use std::net::SocketAddr;
 use std::ops::Add;
 use std::sync::Arc;
-use tokio::{select, time::{sleep_until, Duration, Instant}};
-use types::{BlockHash, Transaction, TransactionHash, PendingTransactionRow, SurrealID, BlockRow, TrackerPing};
-use jsonrpsee::{server::Server, types::ErrorObjectOwned};
-use sha3::{Digest, Keccak256};
-use hex;
-use alloy_primitives::{FixedBytes, B256};
-use futures::prelude::stream::StreamExt;
-use libp2p::{multiaddr, noise, ping, swarm::SwarmEvent, tcp, yamux};
-use serde::{Deserialize, Serialize};
-use surrealdb::sql::Thing;
 use surrealdb::engine::any;
 use surrealdb::engine::any::Any as AnyDb;
-use surrealdb::Surreal;
 use surrealdb::error::Db as ErrorDb;
+use surrealdb::sql::Thing;
+use surrealdb::Surreal;
+use tokio::{
+    select,
+    time::{sleep_until, Duration, Instant},
+};
 use tower_http::cors::{Any, CorsLayer};
-use hyper::Method;
+use types::{
+    BlockHash, BlockRow, PendingTransactionRow, SurrealID, TrackerPing, Transaction,
+    TransactionHash,
+};
 
 use quible_ecdsa_utils::{recover_signer_unchecked, sign_message};
 use quible_rpc::QuibleRpcServer;
@@ -145,7 +151,11 @@ pub struct QuibleRpcServerImpl {
     db: Arc<Surreal<AnyDb>>,
 }
 
-fn compute_quirkle_root(author: [u8; 20], contract_count: u64, slug: Option<String>) -> types::QuirkleRoot {
+fn compute_quirkle_root(
+    author: [u8; 20],
+    contract_count: u64,
+    slug: Option<String>,
+) -> types::QuirkleRoot {
     let mut quirkle_data_hasher = Keccak256::new();
     quirkle_data_hasher.update(author);
 
@@ -195,28 +205,32 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
         // let transaction_json = serde_json::to_value(&transaction).unwrap();
 
         let transaction_hash_hex = hex::encode(transaction_hash);
-        let result: Result<Vec<PendingTransactionRow>, surrealdb::Error> = self.db
+        let result: Result<Vec<PendingTransactionRow>, surrealdb::Error> = self
+            .db
             .create("pending_transactions")
             .content(PendingTransactionRow {
-                id: SurrealID(Thing::from(("pending_transactions".to_string(), transaction_hash_hex.clone().to_string()))),
+                id: SurrealID(Thing::from((
+                    "pending_transactions".to_string(),
+                    transaction_hash_hex.clone().to_string(),
+                ))),
                 // hash: surrealdb::sql::Bytes::from(transaction_hash.to_vec()),
                 hash: transaction_hash_hex,
-                data: transaction.clone()
+                data: transaction.clone(),
             })
             .await;
 
         match result {
-            Ok(pending_transaction_rows) => { 
+            Ok(pending_transaction_rows) => {
                 if pending_transaction_rows.len() == 0 {
                     Err(ErrorObjectOwned::owned::<String>(
-                            CALL_EXECUTION_FAILED_CODE,
-                            "call execution failed: transaction already inserted",
-                            None
+                        CALL_EXECUTION_FAILED_CODE,
+                        "call execution failed: transaction already inserted",
+                        None,
                     ))
-                } else { 
+                } else {
                     Ok(transaction)
                 }
-            },
+            }
             Err(error) => Err(ErrorObjectOwned::owned::<String>(
                 CALL_EXECUTION_FAILED_CODE,
                 "call execution failed: failed to insert",
@@ -245,11 +259,15 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                     .await
                     .and_then(|mut response| response.take((0, "proof_ttl")));
 
-                let proof_ttl = proof_ttl.map_err(|e| ErrorObjectOwned::owned(
-                    CALL_EXECUTION_FAILED_CODE,
-                    "call execution failed: failed to query proof_ttl",
-                    Some(e.to_string()),
-                ))?.unwrap_or(3600); // Default to 1 hour if not found
+                let proof_ttl = proof_ttl
+                    .map_err(|e| {
+                        ErrorObjectOwned::owned(
+                            CALL_EXECUTION_FAILED_CODE,
+                            "call execution failed: failed to query proof_ttl",
+                            Some(e.to_string()),
+                        )
+                    })?
+                    .unwrap_or(3600); // Default to 1 hour if not found
 
                 let expires_at: u64 = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -278,9 +296,13 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
 
                 // TODO(QUI-19): pull in a real private key
                 // TODO: construct the key before starting the server
-                let signer_secret = k256::ecdsa::SigningKey::from_bytes(&hex_literal::hex!(
-                    "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-                ).into()).map_err(|e| {
+                let signer_secret = k256::ecdsa::SigningKey::from_bytes(
+                    &hex_literal::hex!(
+                        "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                    )
+                    .into(),
+                )
+                .map_err(|e| {
                     ErrorObjectOwned::owned(
                         CALL_EXECUTION_FAILED_CODE,
                         "call execution failed: failed to construct signing key",
@@ -291,7 +313,8 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                 let signature_bytes = sign_message(
                     B256::from_slice(&signer_secret.to_bytes()[..]),
                     FixedBytes::new(proof_hash),
-                ).map_err(|e| {
+                )
+                .map_err(|e| {
                     ErrorObjectOwned::owned(
                         CALL_EXECUTION_FAILED_CODE,
                         "call execution failed: could not sign proof",
@@ -304,7 +327,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                     member_address,
                     expires_at,
                     signature: types::QuirkleSignature {
-                        ecdsa_signature_bytes: signature_bytes
+                        ecdsa_signature_bytes: signature_bytes,
                     },
                 })
             }
@@ -324,19 +347,17 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
 
 async fn run_derive_server(db: &Arc<Surreal<AnyDb>>, port: u16) -> anyhow::Result<SocketAddr> {
     let cors = CorsLayer::new()
-		// Allow `POST` when accessing the resource
-		.allow_methods([Method::POST])
-		// Allow requests from any origin
-		.allow_origin(Any)
-		.allow_headers([hyper::header::CONTENT_TYPE]);
+        // Allow `POST` when accessing the resource
+        .allow_methods([Method::POST])
+        // Allow requests from any origin
+        .allow_origin(Any)
+        .allow_headers([hyper::header::CONTENT_TYPE]);
     let middleware = tower::ServiceBuilder::new().layer(cors);
 
     let server = Server::builder()
         .set_http_middleware(middleware)
         .build(format!("127.0.0.1:{}", port).parse::<SocketAddr>()?)
         .await?;
-
-
 
     let addr = server.local_addr()?;
     let handle = server.start(QuibleRpcServerImpl { db: db.clone() }.into_rpc());
@@ -348,8 +369,10 @@ async fn run_derive_server(db: &Arc<Surreal<AnyDb>>, port: u16) -> anyhow::Resul
 
 async fn initialize_tracker_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
     db.query("DEFINE TABLE tracker_pings SCHEMAFULL;").await?;
-    db.query("DEFINE FIELD peer_id ON tracker_pings TYPE string;").await?;
-    db.query("DEFINE FIELD timestamp ON tracker_pings TYPE int;").await?;
+    db.query("DEFINE FIELD peer_id ON tracker_pings TYPE string;")
+        .await?;
+    db.query("DEFINE FIELD timestamp ON tracker_pings TYPE int;")
+        .await?;
 
     Ok(())
 }
@@ -358,37 +381,55 @@ async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
     // Create table for blocks
     db.query("DEFINE TABLE blocks SCHEMAFULL;").await?;
     db.query("DEFINE FIELD hash ON blocks TYPE string;").await?;
-    db.query("DEFINE FIELD block_number ON blocks TYPE int;").await?;
+    db.query("DEFINE FIELD block_number ON blocks TYPE int;")
+        .await?;
     // db.query("DEFINE FIELD timestamp ON blocks TYPE datetime;").await?;
-    db.query("DEFINE FIELD timestamp ON blocks TYPE int;").await?;
-    db.query("DEFINE FIELD transactions ON blocks TYPE array;").await?;
-    db.query("DEFINE FIELD transactions.* ON blocks FLEXIBLE TYPE object;").await?;
+    db.query("DEFINE FIELD timestamp ON blocks TYPE int;")
+        .await?;
+    db.query("DEFINE FIELD transactions ON blocks TYPE array;")
+        .await?;
+    db.query("DEFINE FIELD transactions.* ON blocks FLEXIBLE TYPE object;")
+        .await?;
 
     // Create table for pending transactions
-    db.query("DEFINE TABLE pending_transactions SCHEMAFULL;").await?;
+    db.query("DEFINE TABLE pending_transactions SCHEMAFULL;")
+        .await?;
     // db.query("DEFINE FIELD hash ON pending_transactions TYPE bytes;").await?;
-    db.query("DEFINE FIELD hash ON pending_transactions TYPE string;").await?;
-    db.query("DEFINE FIELD data ON pending_transactions TYPE object;").await?;
-    db.query("DEFINE FIELD data.signature ON pending_transactions TYPE string;").await?;
-    db.query("DEFINE FIELD data.events ON pending_transactions TYPE array;").await?;
+    db.query("DEFINE FIELD hash ON pending_transactions TYPE string;")
+        .await?;
+    db.query("DEFINE FIELD data ON pending_transactions TYPE object;")
+        .await?;
+    db.query("DEFINE FIELD data.signature ON pending_transactions TYPE string;")
+        .await?;
+    db.query("DEFINE FIELD data.events ON pending_transactions TYPE array;")
+        .await?;
 
     // TODO: define the event type more thoroughly here to avoid the use of FLEXIBLE
-    db.query("DEFINE FIELD data.events.* ON pending_transactions FLEXIBLE TYPE object;").await?;
+    db.query("DEFINE FIELD data.events.* ON pending_transactions FLEXIBLE TYPE object;")
+        .await?;
 
     // Create table for author quirkle counts
-    db.query("DEFINE TABLE author_quirkle_counts SCHEMAFULL;").await?;
-    db.query("DEFINE FIELD author ON author_quirkle_counts TYPE string;").await?;
-    db.query("DEFINE FIELD count ON author_quirkle_counts TYPE int;").await?;
+    db.query("DEFINE TABLE author_quirkle_counts SCHEMAFULL;")
+        .await?;
+    db.query("DEFINE FIELD author ON author_quirkle_counts TYPE string;")
+        .await?;
+    db.query("DEFINE FIELD count ON author_quirkle_counts TYPE int;")
+        .await?;
 
     // Create table for quirkle proof TTLs
-    db.query("DEFINE TABLE quirkle_proof_ttls SCHEMAFULL;").await?;
-    db.query("DEFINE FIELD quirkle_root ON quirkle_proof_ttls TYPE string;").await?;
-    db.query("DEFINE FIELD proof_ttl ON quirkle_proof_ttls TYPE int;").await?;
+    db.query("DEFINE TABLE quirkle_proof_ttls SCHEMAFULL;")
+        .await?;
+    db.query("DEFINE FIELD quirkle_root ON quirkle_proof_ttls TYPE string;")
+        .await?;
+    db.query("DEFINE FIELD proof_ttl ON quirkle_proof_ttls TYPE int;")
+        .await?;
 
     // Create table for quirkle items
     db.query("DEFINE TABLE quirkle_items SCHEMAFULL;").await?;
-    db.query("DEFINE FIELD quirkle_root ON quirkle_items TYPE string;").await?;
-    db.query("DEFINE FIELD address ON quirkle_items TYPE string;").await?;
+    db.query("DEFINE FIELD quirkle_root ON quirkle_items TYPE string;")
+        .await?;
+    db.query("DEFINE FIELD address ON quirkle_items TYPE string;")
+        .await?;
 
     Ok(())
 }
@@ -396,7 +437,9 @@ async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
 // TODO: https://linear.app/quible/issue/QUI-49/refactor-entrypoint-for-easier-unit-testing
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let port: u16 = env::var("QUIBLE_PORT").unwrap_or_else(|_| "9013".to_owned()).parse()?;
+    let port: u16 = env::var("QUIBLE_PORT")
+        .unwrap_or_else(|_| "9013".to_owned())
+        .parse()?;
     let endpoint = env::var("QUIBLE_DATABASE_URL").unwrap_or_else(|_| "memory".to_owned());
     let leader_addr = env::var("QUIBLE_LEADER_MULTIADDR").ok();
     // surrealdb init
@@ -440,9 +483,9 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let remote_addr = leader_addr.clone().map(|url| {
-        (url.clone(), url.parse::<multiaddr::Multiaddr>().unwrap())
-    });
+    let remote_addr = leader_addr
+        .clone()
+        .map(|url| (url.clone(), url.parse::<multiaddr::Multiaddr>().unwrap()));
 
     match remote_addr.clone() {
         Some((url, addr)) => {
@@ -526,7 +569,7 @@ mod tests {
         let events = vec![types::Event::CreateQuirkle {
             members: vec![],
             proof_ttl: 86400,
-            slug: None
+            slug: None,
         }];
         let hash = compute_transaction_hash(&events);
         let signature_bytes = sign_message(
@@ -545,13 +588,15 @@ mod tests {
         dbg!("response: {:?}", response);
 
         // Query pending transactions from SurrealDB
-        let pending_transaction_rows: Vec<PendingTransactionRow> = db_arc
-            .select("pending_transactions")
-            .await?;
+        let pending_transaction_rows: Vec<PendingTransactionRow> =
+            db_arc.select("pending_transactions").await?;
 
         for row in pending_transaction_rows {
             println!("Transaction Hash: {}", row.hash);
-            println!("Transaction Data: {}", serde_json::to_string_pretty(&row.data)?);
+            println!(
+                "Transaction Data: {}",
+                serde_json::to_string_pretty(&row.data)?
+            );
         }
 
         Ok(())
@@ -559,7 +604,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_request_proof() -> anyhow::Result<()> {
-
         let db = any::connect("memory").await?;
         db.use_ns("quible").use_db("quible_node").await?;
         initialize_db(&db).await?;

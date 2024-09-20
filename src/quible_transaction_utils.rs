@@ -9,7 +9,11 @@ pub fn compute_transaction_hash(events: &Vec<Event>) -> TransactionHash {
 
     for event in events {
         match event {
-            Event::CreateQuirkle { members, proof_ttl, slug } => {
+            Event::CreateQuirkle {
+                members,
+                proof_ttl,
+                slug,
+            } => {
                 for member in members {
                     data.extend(member.clone().into_bytes());
                 }

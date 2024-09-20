@@ -16,7 +16,7 @@ pub struct PendingTransactionRow {
     pub hash: String,
     // pub hash: surrealdb::sql::Bytes,
     // pub hash: TransactionHash,
-    pub data: Transaction
+    pub data: Transaction,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,7 +24,7 @@ pub struct BlockRow {
     pub hash: String,
     pub block_number: u64,
     pub timestamp: u64,
-    pub transactions: Vec<serde_json::Value>
+    pub transactions: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
