@@ -149,6 +149,7 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<AnyDb>>) {
 }
 pub struct QuibleRpcServerImpl {
     db: Arc<Surreal<AnyDb>>,
+    node_signer_key: [u8; 32]
 }
 
 fn compute_quirkle_root(
@@ -297,10 +298,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                 // TODO(QUI-19): pull in a real private key
                 // TODO: construct the key before starting the server
                 let signer_secret = k256::ecdsa::SigningKey::from_bytes(
-                    &hex_literal::hex!(
-                        "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-                    )
-                    .into(),
+                    &self.node_signer_key.into(),
                 )
                 .map_err(|e| {
                     ErrorObjectOwned::owned(
@@ -345,7 +343,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
     }
 }
 
-async fn run_derive_server(db: &Arc<Surreal<AnyDb>>, port: u16) -> anyhow::Result<SocketAddr> {
+async fn run_derive_server(node_signer_key: [u8; 32], db: &Arc<Surreal<AnyDb>>, port: u16) -> anyhow::Result<SocketAddr> {
     let cors = CorsLayer::new()
         // Allow `POST` when accessing the resource
         .allow_methods([Method::POST])
@@ -360,7 +358,7 @@ async fn run_derive_server(db: &Arc<Surreal<AnyDb>>, port: u16) -> anyhow::Resul
         .await?;
 
     let addr = server.local_addr()?;
-    let handle = server.start(QuibleRpcServerImpl { db: db.clone() }.into_rpc());
+    let handle = server.start(QuibleRpcServerImpl { db: db.clone(), node_signer_key }.into_rpc());
 
     tokio::spawn(handle.stopped());
 
@@ -445,7 +443,9 @@ async fn main() -> anyhow::Result<()> {
         }
     };
 
-    let signing_key_decoded = hex::decode(signing_key_hex)?;
+    let mut signing_key_decoded = [0u8; 32];
+    hex::decode_to_slice(signing_key_hex.clone(), &mut signing_key_decoded)?;
+    assert!(signing_key_hex.len() == 64, "unexpected length for QUIBLE_SIGNER_KEY");
 
     let port: u16 = env::var("QUIBLE_PORT")
         .unwrap_or_else(|_| "9013".to_owned())
@@ -465,7 +465,10 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let db_arc = Arc::new(db);
-    let server_addr = run_derive_server(&db_arc, port).await?;
+    let server_addr = run_derive_server(
+        signing_key_decoded,
+        &db_arc, port
+        ).await?;
     let url = format!("http://{}", server_addr);
     println!("server listening at {}", url);
 
@@ -575,7 +578,9 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_addr = run_derive_server(&db_arc, 0).await?;
+        let server_addr = run_derive_server(
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
+            &db_arc, 0).await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
@@ -624,7 +629,9 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_addr = run_derive_server(&db_arc, 0).await?;
+        let server_addr = run_derive_server(
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
+            &db_arc, 0).await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
