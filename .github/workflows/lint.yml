@@ -8,7 +8,7 @@ env:
 
 jobs:
   build_and_test:
-    name: Rust project - latest
+    name: Cargo Format Test
     runs-on: ubuntu-latest
 
     steps:
