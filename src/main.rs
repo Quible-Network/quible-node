@@ -437,11 +437,24 @@ async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
 // TODO: https://linear.app/quible/issue/QUI-49/refactor-entrypoint-for-easier-unit-testing
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let signing_key_hex = match env::var("QUIBLE_SIGNER_KEY").ok() {
+        Some(key) => key,
+        None => {
+            println!("warning: no signer key supplied! using default");
+            "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_owned()
+        }
+    };
+
+    let signing_key_decoded = hex::decode(signing_key_hex)?;
+
     let port: u16 = env::var("QUIBLE_PORT")
         .unwrap_or_else(|_| "9013".to_owned())
         .parse()?;
+
     let endpoint = env::var("QUIBLE_DATABASE_URL").unwrap_or_else(|_| "memory".to_owned());
+
     let leader_addr = env::var("QUIBLE_LEADER_MULTIADDR").ok();
+
     // surrealdb init
     let db = any::connect(endpoint).await?;
     db.use_ns("quible").use_db("quible_node").await?;
@@ -459,8 +472,9 @@ async fn main() -> anyhow::Result<()> {
     let mut block_number = 0u64;
     let mut block_timestamp = Instant::now();
 
-    // TODO: derive identity from configurable ECDSA key
-    let mut swarm = libp2p::SwarmBuilder::with_new_identity()
+    let keypair: libp2p_identity::ecdsa::Keypair = libp2p_identity::ecdsa::SecretKey::try_from_bytes(signing_key_decoded)?.into();
+
+    let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair.into())
         .with_tokio()
         .with_tcp(
             tcp::Config::default(),
