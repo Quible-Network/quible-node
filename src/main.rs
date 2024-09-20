@@ -4,13 +4,14 @@ use jsonrpsee::types::error::CALL_EXECUTION_FAILED_CODE;
 use std::net::SocketAddr;
 use std::ops::Add;
 use std::sync::Arc;
-use tokio::time::{sleep_until, Duration, Instant};
+use tokio::{select, time::{sleep_until, Duration, Instant}};
 use types::{BlockHash, Transaction, TransactionHash, PendingTransactionRow, SurrealID, BlockRow};
 use jsonrpsee::{server::Server, types::ErrorObjectOwned};
 use sha3::{Digest, Keccak256};
 use hex;
 use alloy_primitives::{FixedBytes, B256};
-
+use futures::prelude::stream::StreamExt;
+use libp2p::{multiaddr, noise, ping, swarm::SwarmEvent, tcp, yamux};
 use serde::{Deserialize, Serialize};
 use surrealdb::sql::Thing;
 use surrealdb::engine::any;
@@ -384,29 +385,92 @@ async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
     Ok(())
 }
 
+// TODO: https://linear.app/quible/issue/QUI-49/refactor-entrypoint-for-easier-unit-testing
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let port: u16 = env::var("QUIBLE_PORT").unwrap_or_else(|_| "9013".to_owned()).parse()?;
     let endpoint = env::var("QUIBLE_DATABASE_URL").unwrap_or_else(|_| "memory".to_owned());
+    let leader_addr = env::var("QUIBLE_LEADER_MULTIADDR").ok();
     // surrealdb init
     let db = any::connect(endpoint).await?;
     db.use_ns("quible").use_db("quible_node").await?;
     initialize_db(&db).await?;
 
     let db_arc = Arc::new(db);
-    let server_addr = run_derive_server(&db_arc, 9013).await?;
+    let server_addr = run_derive_server(&db_arc, port).await?;
     let url = format!("http://{}", server_addr);
     println!("server listening at {}", url);
 
     let mut block_number = 0u64;
     let mut block_timestamp = Instant::now();
 
+    // TODO: derive identity from configurable ECDSA key
+    let mut swarm = libp2p::SwarmBuilder::with_new_identity()
+        .with_tokio()
+        .with_tcp(
+            tcp::Config::default(),
+            noise::Config::new,
+            yamux::Config::default,
+        )?
+        .with_behaviour(|_| ping::Behaviour::default())?
+        .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(u64::MAX)))
+        .build();
+
+    // TODO: https://linear.app/quible/issue/QUI-48/make-libp2p-port-configurable
+    match leader_addr {
+        None => {
+            println!("listening as leader");
+            swarm.listen_on("/ip4/0.0.0.0/tcp/9014".parse()?)?;
+        }
+
+        Some(_) => {
+            swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
+        }
+    };
+
+    let remote_addr = leader_addr.clone().map(|url| {
+        (url.clone(), url.parse::<multiaddr::Multiaddr>().unwrap())
+    });
+
+    match remote_addr.clone() {
+        Some((url, addr)) => {
+            match swarm.dial(addr) {
+                Err(e) => {
+                    eprintln!("Failed to dial {url}: {}", e);
+                }
+
+                _ => {}
+            };
+
+            println!("Dialed {url}");
+        }
+
+        _ => {}
+    }
+
+    propose_block(block_number, &db_arc).await;
+
     loop {
-        propose_block(block_number, &db_arc).await;
+        select! {
+            _ = sleep_until(block_timestamp + SLOT_DURATION) => {
+                block_timestamp = block_timestamp + SLOT_DURATION;
+                block_number += 1;
 
-        sleep_until(block_timestamp + SLOT_DURATION).await;
+                propose_block(block_number, &db_arc).await;
+            }
 
-        block_timestamp = block_timestamp + SLOT_DURATION;
-        block_number += 1;
+            event = swarm.select_next_some() => match event {
+                SwarmEvent::NewListenAddr { address, .. } => println!("libp2p listening on {address:?}"),
+                SwarmEvent::Behaviour(event) => println!("{event:?}"),
+
+                // TODO(QUI-46): enable debug log level
+                SwarmEvent::OutgoingConnectionError { .. } => println!("dial failure: {event:?}"),
+
+                _ => {
+                    // TODO(QUI-46): enable debug log level
+                }
+            }
+        }
     }
 }
 
