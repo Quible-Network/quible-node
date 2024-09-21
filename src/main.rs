@@ -460,7 +460,11 @@ async fn main() -> anyhow::Result<()> {
         "unexpected length for QUIBLE_SIGNER_KEY"
     );
 
-    let port: u16 = env::var("QUIBLE_PORT")
+    let p2p_port: u16 = env::var("QUIBLE_P2P_PORT")
+        .unwrap_or_else(|_| "9014".to_owned())
+        .parse()?;
+
+    let rpc_port: u16 = env::var("QUIBLE_RPC_PORT")
         .unwrap_or_else(|_| "9013".to_owned())
         .parse()?;
 
@@ -478,7 +482,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let db_arc = Arc::new(db);
-    let server_addr = run_derive_server(signing_key_decoded, &db_arc, port).await?;
+    let server_addr = run_derive_server(signing_key_decoded, &db_arc, rpc_port).await?;
     let url = format!("http://{}", server_addr);
     println!("server listening at {}", url);
 
@@ -499,17 +503,7 @@ async fn main() -> anyhow::Result<()> {
         .with_swarm_config(|cfg| cfg.with_idle_connection_timeout(Duration::from_secs(u64::MAX)))
         .build();
 
-    // TODO: https://linear.app/quible/issue/QUI-48/make-libp2p-port-configurable
-    match leader_addr {
-        None => {
-            println!("listening as leader");
-            swarm.listen_on("/ip4/0.0.0.0/tcp/9014".parse()?)?;
-        }
-
-        Some(_) => {
-            swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
-        }
-    };
+    swarm.listen_on(multiaddr::multiaddr!(Ip4([0, 0, 0, 0]), Tcp(p2p_port)))?;
 
     let remote_addr = leader_addr
         .clone()
