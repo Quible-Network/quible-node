@@ -38,7 +38,7 @@ name = "client"
 path = "src/client.rs"
 
 [package.metadata.deb]
-maintainer-scripts = "debian/"
+maintainer-scripts = "pkg/deb/"
 systemd-units = { enable = true }
 depends = "systemd, surreal"
 assets = [
