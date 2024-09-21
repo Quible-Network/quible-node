@@ -358,7 +358,7 @@ async fn run_derive_server(
 
     let server = Server::builder()
         .set_http_middleware(middleware)
-        .build(format!("127.0.0.1:{}", port).parse::<SocketAddr>()?)
+        .build(format!("0.0.0.0:{}", port).parse::<SocketAddr>()?)
         .await?;
 
     let addr = server.local_addr()?;
