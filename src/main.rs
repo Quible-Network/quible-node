@@ -555,7 +555,15 @@ async fn main() -> anyhow::Result<()> {
                 },
 
                 // TODO(QUI-46): enable debug log level
-                SwarmEvent::OutgoingConnectionError { .. } => println!("dial failure: {event:?}"),
+                SwarmEvent::OutgoingConnectionError { .. } => {
+                    panic!("dial failure: {event:?}");
+                },
+
+                SwarmEvent::ConnectionClosed { .. } => {
+                    if leader_addr.is_some() {
+                        panic!("leader connection closed: {event:?}");
+                    }
+                },
 
                 _ => {
                     // TODO(QUI-46): enable debug log level
