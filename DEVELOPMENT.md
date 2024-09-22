@@ -2,7 +2,11 @@
 
 Use this command to run the node locally (with no persistence):
 
-    cargo run --features surrealdb/kv-mem --bin quible-node
+    make leader
+
+Use this command to simulate other non-leader node peers:
+
+    make follower
 
 # Building a binary
 
@@ -13,15 +17,13 @@ In order to build a binary on MacOS, follow the steps from the [messense/homebre
 
 Use this command to build the binary:
 
-    cargo build --config .cargo/macos-cross.toml --features surrealdb/protocol-ws --release --target=x86_64-unknown-linux-gnu
+    make build
 
 ## Building a debian package
 
-Ensure you have cargo-deb installed (`cargo install cargo-deb`).
+Build the debian package with this command:
 
-After building the binary, you can build the debian package with this command:
-
-    cargo deb --no-build --target=x86_64-unknown-linux-gnu
+    make build-deb
 
 # Using docker-compose
 
@@ -50,25 +52,3 @@ Use this command to build the image:
 Use this command to run the image:
 
     docker run -p 9013:9013 --add-host=host.docker.internal:host-gateway -e QUIBLE_DATABASE_URL=ws://host.docker.internal:8000 --platform linux/x86_64 -it quible-node
-
-# Deployment
-
-#### Prerequisites
-
-1. You must have Docker installed and running on your machine.
-2. [INSERT SYSTEM REQUIREMENTS HERE]
-
-#### Instructions (Linux x86_64)
-
-1. `rustup target add x86_64-unknown-linux-gnu`
-2. `cargo build --release --target x86_64-unknown-linux-gnu`
-
-##### Instructions (MacOS)
-
-1. `rustup target add x86_64-apple-darwin`
-2. `cargo build --release --target x86_64-apple-darwin`
-
-#### Instructions (Windows)
-
-1. `rustup target add x86_64-pc-windows-msvc`
-2. `cargo build --release --target x86_64-pc-windows-msvc`
