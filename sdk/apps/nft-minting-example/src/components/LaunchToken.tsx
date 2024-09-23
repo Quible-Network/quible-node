@@ -28,7 +28,7 @@ const LaunchToken = (props: {
     setIsPending(true);
     const wallet = quibleProvider.getWallet(props.accountAddress);
 
-    const { raw: quirkleRoot } = await wallet.createQuirkle({
+    const quirkleRoot = await wallet.createQuirkle({
       members: accessList,
       proofTtl: 86400,
       signMessage: (message) => signMessageAsync({message: { raw: message }})
@@ -37,7 +37,7 @@ const LaunchToken = (props: {
     const hash = await deployContractAsync({
       abi: MyNFTArtifacts.abi,
       bytecode: MyNFTArtifacts.bytecode as unknown as `0x${string}`,
-      args: [props.accountAddress, quirkleRoot],
+      args: [props.accountAddress, `0x${quirkleRoot.toHex()}`],
     });
 
     const { contractAddress: newContractAddress } =
