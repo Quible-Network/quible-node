@@ -4,6 +4,7 @@ Description=Running a dedicated Quible Node
 [Service]
 ExecStart=/usr/share/quible/quible-node
 Environment=QUIBLE_DATABASE_URL=ws://localhost:8000
+Environment=QUIBLE_SIGNER_KEY_FILE=/etc/quible-signer-key
 Restart=always
 
 [Install]
