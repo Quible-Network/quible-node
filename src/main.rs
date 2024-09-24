@@ -9,6 +9,7 @@ use libp2p::{multiaddr, noise, ping, swarm::SwarmEvent, tcp, yamux};
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 use std::env;
+use std::fs;
 use std::net::SocketAddr;
 use std::ops::Add;
 use std::sync::Arc;
@@ -448,8 +449,12 @@ async fn main() -> anyhow::Result<()> {
     let signing_key_hex = match env::var("QUIBLE_SIGNER_KEY").ok() {
         Some(key) => key,
         None => {
-            println!("warning: no signer key supplied! using default");
-            "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_owned()
+            let key_file_path = env::var("QUIBLE_SIGNER_KEY_FILE")
+                .expect("no QUIBLE_SIGNER_KEY or QUIBLE_SIGNER_KEY_FILE provided");
+
+            let contents = fs::read(key_file_path.clone())
+                .expect(&format!("failed to read file at {key_file_path}"));
+            std::str::from_utf8(&contents).unwrap().to_owned()
         }
     };
 
