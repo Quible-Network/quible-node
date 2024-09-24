@@ -93,6 +93,11 @@ impl std::fmt::Debug for ECDSASignature {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct HealthCheckResponse {
+    pub status: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct QuirkleProof {
     pub quirkle_root: QuirkleRoot,
     pub member_address: String,

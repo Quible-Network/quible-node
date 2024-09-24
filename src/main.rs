@@ -24,8 +24,8 @@ use tokio::{
 };
 use tower_http::cors::{Any, CorsLayer};
 use types::{
-    BlockHash, BlockRow, PendingTransactionRow, SurrealID, TrackerPing, Transaction,
-    TransactionHash,
+    BlockHash, BlockRow, HealthCheckResponse, PendingTransactionRow, SurrealID, TrackerPing,
+    Transaction, TransactionHash,
 };
 
 use quible_ecdsa_utils::{recover_signer_unchecked, sign_message};
@@ -240,6 +240,7 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
             )),
         }
     }
+
     async fn request_proof(
         &self,
         quirkle_root: types::QuirkleRoot,
@@ -341,6 +342,12 @@ impl quible_rpc::QuibleRpcServer for QuibleRpcServerImpl {
                 Some(e.to_string()),
             )),
         }
+    }
+
+    async fn check_health(&self) -> Result<types::HealthCheckResponse, ErrorObjectOwned> {
+        Ok(HealthCheckResponse {
+            status: "healthy".to_string(),
+        })
     }
 }
 

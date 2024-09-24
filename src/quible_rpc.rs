@@ -22,4 +22,7 @@ pub trait QuibleRpc {
         member_address: String,
         requested_at_block_number: u128,
     ) -> Result<types::QuirkleProof, ErrorObjectOwned>;
+
+    #[method(name = "checkHealth")]
+    async fn check_health(&self) -> Result<types::HealthCheckResponse, ErrorObjectOwned>;
 }
