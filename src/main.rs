@@ -461,16 +461,16 @@ async fn main() -> anyhow::Result<()> {
 
             let contents = fs::read(key_file_path.clone())
                 .expect(&format!("failed to read file at {key_file_path}"));
-            std::str::from_utf8(&contents).unwrap().to_owned()
+            std::str::from_utf8(&contents).unwrap().trim().to_owned()
         }
     };
 
-    let mut signing_key_decoded = [0u8; 32];
-    hex::decode_to_slice(signing_key_hex.clone(), &mut signing_key_decoded)?;
     assert!(
-        signing_key_hex.len() == 64,
+        signing_key_hex.clone().len() == 64,
         "unexpected length for QUIBLE_SIGNER_KEY"
     );
+    let mut signing_key_decoded = [0u8; 32];
+    hex::decode_to_slice(signing_key_hex, &mut signing_key_decoded)?;
 
     let p2p_port: u16 = env::var("QUIBLE_P2P_PORT")
         .unwrap_or_else(|_| "9014".to_owned())
