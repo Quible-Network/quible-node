@@ -14,6 +14,14 @@ set +x
 if [ ! -f /etc/quible-signer-key ]; then
 	echo "Signer key not configured. Configuring now..."
 	read -p "Enter hexadecimal ECDSA signer key: " QUIBLE_SIGNER_KEY
+
+	QUIBLE_SIGNER_KEY=${QUIBLE_SIGNER_KEY#0x}
+
+	if [ ${#QUIBLE_SIGNER_KEY} -ne 64 ]; then
+		echo "Error: key $QUIBLE_SIGNER_KEY does not match expected length"
+		exit 1
+	fi
+
 	echo $QUIBLE_SIGNER_KEY | sudo tee /etc/quible-signer-key
 fi
 set -x
