@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+# TODO: https://linear.app/quible/issue/QUI-63/reporting-cloudformation-installation-errors
+
 set -e
 set -x
 
