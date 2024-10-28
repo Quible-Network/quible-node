@@ -35,6 +35,7 @@ use quible_transaction_utils::compute_transaction_hash;
 pub mod quible_ecdsa_utils;
 pub mod quible_rpc;
 pub mod quible_transaction_utils;
+pub mod tx;
 pub mod types;
 
 const SLOT_DURATION: Duration = Duration::from_secs(4);
