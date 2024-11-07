@@ -1,12 +1,14 @@
+# TypeScript SDK
+
 Use the Quible TypeScript SDK to simplify interactions with the Quible Network. No configuration is required for requesting and signing certificates, however for creating and updating identities, you will need a hexadecimal 32-byte ECDSA private key.
 
-# Installation
+## Installation
 
 To install the Quible TypeScript SDK, use this command:
 
     npm install @quible/sdk
 
-# Creating identities
+## Creating identities
 
 Identities are Quible’s core building block. A wallet can create new identities at any time. With an identity, you can store claims and request corresponding attestations from the network that prove that the claims have been associated with that identity. This attestation is also known as a certificate. Claims can be added to or removed from an identity at any time. Identities can be owned by one or more wallets. Claims are arbitrary-length byte vectors.
 
@@ -34,7 +36,7 @@ const identity = await wallet.createIdentity({
 console.log('identity id: ', identity.id.toHex())
 ```
 
-# Updating identities
+## Updating identities
 
 Identities store claims as unordered sets. When updating an identity, you may provide a list of claims to-be-inserted, and/or a list of claims to-be-deleted.
 
@@ -54,7 +56,7 @@ await identity.update({
 })
 ```
 
-# Issuing certificates
+## Issuing certificates
 
 To to issue a certificate for a set of claims, use the `getCertificate` method. This method sends a certificate signing request to the network, and if all claims are included in the identity at the time of the request, a new certificate is returned by the method.
 
@@ -90,7 +92,7 @@ const certificates = await Promise.all(claims.map(async (claim) => {
 }))
 ```
 
-# Verifying certificates
+## Verifying certificates
 
 To verify an certificate, you can use these methods on an certificate object: `isValid` and `verify`.
 
