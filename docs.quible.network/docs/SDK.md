@@ -6,7 +6,9 @@ Use the Quible TypeScript SDK to simplify interactions with the Quible Network. 
 
 To install the Quible TypeScript SDK, use this command:
 
-    npm install @quible/sdk
+```
+npm install @quible/sdk
+```
 
 ## Creating identities
 
