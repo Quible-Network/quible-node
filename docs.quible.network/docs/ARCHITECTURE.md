@@ -27,6 +27,66 @@ Requestors are users, or machines, who wish to obtain a certificate. A certifica
 
 Certificates are obtained by submitting a *Certificate Signing Request* to a Validator‑Signer Node within the Quible Network. A requestor does not need a wallet nor perform any signing in order to submit the request.
 
+## Blockchain Design
+
+The Quible Network implements a proof-of-stake UTXO-based blockchain. Beyond the normal capabilities of a transferable token, Quible transactions can spend tokens to create persistent stateful objects.
+
+Let’s explore how this is implemented. In Quible, there are two types of UTXOs: *value* outputs and *object* outputs.
+
+```
+type TransactionOutput
+  = TransactionOutput
+    { pubkey_script : Vec TransactionOpCode
+    , details : TransactionOutputDetails
+    }
+
+type TransactionOutputDetails
+  = Value
+    { value : u64
+    }
+  | Object
+    { object_id : ObjectIdentifier
+    , data_script : Vec TransactionOpCode
+    }
+```
+
+Value outputs inherit the same behavior seen in Bitcoin, where their value corresponds to an amount of tokens being spent by the transaction. Object outputs do not contain values, and instead contain information for the creation or modification of persistent stateful objects.
+
+Let’s look a little deeper into object outputs. The *data script* which is a sequence of opcodes for modifying the state of the object. The *object ID* is the reference point for the object, so that the chain can identify what object is being modified.
+
+```
+type ObjectMode
+  = Fresh
+  | Existing { permit_index : u32 }
+
+type ObjectIdentifier
+  = ObjectIdentifier
+    { raw : [u8; 32]
+    , mode : ObjectMode
+    }
+```
+
+As detailed above, object IDs are 32-bytes and have two possible modes.
+
+- **Fresh**: The *fresh* object mode is used to signify that this transaction is creating a new object. When using this mode, the object ID must equal the result of hashing of the IDs of the transaction inputs and the index of the current output.
+
+- **Existing**: The *existing* object mode is used to reference an object that was created in a prior block. In order to build a valid transaction, the transaction must spend the prior unspent transaction object output for that object. The *permit index* parameter refers to the index of the transaction input which is spending the prior unspent transaction object output.
+
+### Transaction Opcodes
+
+Quible supports a minimal set of opcodes for the common [Pay-to-PubKey-Hash](https://bitcoinwiki.org/wiki/pay-to-pubkey-hash) script, as well as additional domain-specific instructions which are used in data scripts for operating on objects as unordered sets of byte vectors.
+
+| Operation      | Purpose       | Parameters | Description |
+| -------------- | ------------- | ---------- | ----------- |
+| PUSH           | Generic       | Vec u8     | A byte vector is pushed onto the stack. |
+| DUP            | Generic       |            | The top stack item is duplicated. |
+| CHECKSIGVERIFY | PubKey Script |            | The entire transaction’s outputs, inputs, and script are hashed. A signature and a public key are popped from the stack. The signature must be a valid signature for this hash and public key. If it is not valid, the script fails. |
+| EQUALVERIFY    | PubKey Script |            | Two byte vectors are popped from the stack and compared. If they are not equal, the script fails. |
+| DELETEALL      | Data Script   |            | All members are deleted from the unordered set. |
+| DELETE         | Data Script   | Vec u8     | The member equal to the provided byte vector, if it exists, is deleted from the unordered set. |
+| INSERT         | Data Script   | Vec u8     | If there is no member equal to the provided byte vector in the unordered set, it is inserted into the unordered set. |
+| SETCERTTTL     | Data Script   |            | Pops a byte vector from the stack. The value is interpreted as a little-endian variable-length unsigned integer. The value is stored as the “Certificate Time-To-Live” for the unordered set, which is used to configure an expiration date when certificates are produced by nodes. |
+
 ## Certificate Issuance
 
 As mentioned above, Validator‑Signer Nodes participate in certificate signing during the certificate issuance process. This process requires nodes to lookup the latest information about an identity and attest to it via digital signing. There are two ways to store identities and identity claims:
