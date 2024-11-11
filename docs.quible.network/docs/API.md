@@ -169,7 +169,7 @@ Returns the number of transactions in a block matching the given block height.
 
 **Parameters**
 
-1. `QUANTITY|TAG` - integer of a block height, or the string `"earliest"`, `"latest"`, `"pending"`, `"safe"` or `"finalized"`, as in the [default block parameter](/developers/docs/apis/json-rpc/#default-block).
+1. `QUANTITY|TAG` - integer of a block height, or the string `"earliest"`, `"latest"`, `"pending"`, `"safe"` or `"finalized"`, as in the default block parameter.
 
 ```js
 params: [
@@ -337,7 +337,7 @@ Returns information about a block by block height.
 
 **Parameters**
 
-1. `QUANTITY|TAG` - integer of a block height, or the string `"earliest"`, `"latest"`, `"pending"`, `"safe"` or `"finalized"`, as in the [default block parameter](/developers/docs/apis/json-rpc/#default-block).
+1. `QUANTITY|TAG` - integer of a block height, or the string `"earliest"`, `"latest"`, `"pending"`, `"safe"` or `"finalized"`, as in the default block parameter.
 2. `Boolean` - If `true` it returns the full transaction objects, if `false` only the hashes of the transactions.
 
 ```js
@@ -452,7 +452,7 @@ Returns information about a transaction by block height and transaction index po
 
 **Parameters**
 
-1. `QUANTITY|TAG` - a block height, or the string `"earliest"`, `"latest"`, `"pending"`, `"safe"` or `"finalized"`, as in the [default block parameter](/developers/docs/apis/json-rpc/#default-block).
+1. `QUANTITY|TAG` - a block height, or the string `"earliest"`, `"latest"`, `"pending"`, `"safe"` or `"finalized"`, as in the default block parameter.
 2. `QUANTITY` - the transaction index position.
 
 ```js
@@ -479,7 +479,7 @@ Returns information about a uncle of a block by number and uncle index position.
 
 **Parameters**
 
-1. `QUANTITY|TAG` - a block height, or the string `"earliest"`, `"latest"`, `"pending"`, `"safe"`, `"finalized"`, as in the [default block parameter](/developers/docs/apis/json-rpc/#default-block).
+1. `QUANTITY|TAG` - a block height, or the string `"earliest"`, `"latest"`, `"pending"`, `"safe"`, `"finalized"`, as in the default block parameter.
 2. `QUANTITY` - the uncle's index position.
 
 ```js
