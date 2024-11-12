@@ -46,10 +46,14 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
     while let Some((transaction_hash, transaction)) =
         context.fetch_next_pending_transaction().await?
     {
-        let Transaction::Version1 { inputs, .. } = transaction;
+        let Transaction::Version1 {
+            inputs, outputs, ..
+        } = transaction;
 
         let execute_transaction = async {
             let mut spent_outpoints = Vec::<TransactionOutpoint>::new();
+            let mut input_value = 0u64;
+            let mut output_value = 0u64;
 
             for (
                 index,
@@ -66,12 +70,37 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
                     return Err(anyhow!("cannot spend output twice"));
                 }
 
-                let _output_being_spent = context.fetch_unspent_output(outpoint.clone()).await?;
+                let output_being_spent = context.fetch_unspent_output(outpoint.clone()).await?;
                 spent_outpoints.push(outpoint.clone());
 
                 // TODO: verify signature script has only data pushes
                 // TODO: execute signature script followed by input's pubkey script
-                // TODO: accumulate input's value
+
+                match output_being_spent {
+                    TransactionOutput::Value { value, .. } => {
+                        input_value += value;
+                    }
+
+                    _ => {}
+                }
+            }
+
+            for (index, output) in outputs.iter().enumerate() {
+                dbg!(index, output);
+
+                match output {
+                    TransactionOutput::Value { value, .. } => {
+                        output_value += value;
+                    }
+
+                    _ => {}
+                }
+            }
+
+            // TODO: https://linear.app/quible/issue/QUI-93/enforce-transaction-fees
+            dbg!(output_value, input_value);
+            if output_value > input_value {
+                return Err(anyhow!("output value exceeds input value"));
             }
 
             context.include_in_next_block(transaction_hash).await?;
@@ -392,6 +421,51 @@ mod tests {
         assert_eq!(failure_count, 1);
         let err = &context.failed_transactions.get(0).unwrap().1;
         assert_eq!(format!("{}", err.root_cause()), "cannot spend output twice");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn output_value_cannot_exceed_input() -> anyhow::Result<()> {
+        let coinbase = Transaction::Version1 {
+            inputs: vec![],
+            outputs: vec![TransactionOutput::Value {
+                value: 5,
+                pubkey_script: vec![],
+            }],
+            locktime: 0,
+        };
+
+        let coinbase_hash = coinbase.hash()?;
+
+        let mut context = create_context(
+            vec![coinbase],
+            vec![Transaction::Version1 {
+                inputs: vec![TransactionInput {
+                    outpoint: TransactionOutpoint {
+                        txid: coinbase_hash,
+                        index: 0,
+                    },
+                    signature_script: vec![],
+                }],
+                outputs: vec![TransactionOutput::Value {
+                    value: 6,
+                    pubkey_script: vec![],
+                }],
+                locktime: 0,
+            }],
+        );
+
+        collect_valid_block_transactions(&mut context).await?;
+
+        assert_eq!(context.included_transactions.len(), 0);
+        let failure_count = context.failed_transactions.len();
+        assert_eq!(failure_count, 1);
+        let err = &context.failed_transactions.get(0).unwrap().1;
+        assert_eq!(
+            format!("{}", err.root_cause()),
+            "output value exceeds input value"
+        );
 
         Ok(())
     }
