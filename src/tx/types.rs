@@ -1,4 +1,10 @@
+use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Keccak256};
+
+pub trait Hashable {
+    fn hash(&self) -> anyhow::Result<[u8; 32]>;
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BlockHeader {
@@ -22,9 +28,9 @@ pub enum TransactionOpCode {
     // general
     Push { data: Vec<u8> },
 
-    // pubkey script
-    // P2PKH pubkey script: OP_DUP OP_PUSH(<pkh>) OP_EQUALVERIFY OP_CHECKSIGVERIFY
-    // P2PKH sig script: OP_PUSH(<sig>) OP_PUSH(<pkh>)
+    // pubkey script Pay-to-Address (P2A)
+    // P2A pubkey script: OP_DUP OP_PUSH(<address>) OP_EQUALVERIFY OP_CHECKSIGVERIFY
+    // P2A sig script: OP_PUSH(<sig>) OP_PUSH(<address>)
     CheckSigVerify,
     Dup,
     EqualVerify,
@@ -39,7 +45,7 @@ pub enum TransactionOpCode {
                //       before you can commit changes to the set
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TransactionOutpoint {
     pub txid: [u8; 32],
 
@@ -92,4 +98,16 @@ pub enum Transaction {
         #[serde(with = "postcard::fixint::le")]
         locktime: u32,
     },
+}
+
+impl Hashable for Transaction {
+    fn hash(&self) -> anyhow::Result<[u8; 32]> {
+        let mut transaction_data_hasher = Keccak256::new();
+        postcard::to_io(&self, &mut transaction_data_hasher)?;
+        let transaction_hash_vec = transaction_data_hasher.finalize();
+        transaction_hash_vec
+            .as_slice()
+            .try_into()
+            .map_err(|_| anyhow!("failed to convert hash slice to 32 bytes"))
+    }
 }
