@@ -1,6 +1,6 @@
 use anyhow::anyhow;
 use async_trait::async_trait;
-use db::types::{BlockRow, PendingTransactionRow, SurrealID, TrackerPing};
+use db::types::{BlockRow, PendingTransactionRow, SurrealID, TrackerPing, TransactionOutputRow};
 use futures::prelude::stream::StreamExt;
 use hex;
 use hyper::Method;
@@ -25,9 +25,7 @@ use tokio::{
 };
 use tower_http::cors::{Any, CorsLayer};
 use tx::engine::{collect_valid_block_transactions, ExecutionContext};
-use tx::types::{
-    Block, BlockHeader, Hashable, Transaction, TransactionOutpoint, TransactionOutput,
-};
+use tx::types::{BlockHeader, Hashable, Transaction, TransactionOutpoint, TransactionOutput};
 use types::HealthCheckResponse;
 
 use rpc::QuibleRpcServer;
@@ -71,9 +69,39 @@ impl ExecutionContext for QuibleBlockProposerExecutionContextImpl {
 
     async fn fetch_unspent_output(
         &mut self,
-        _outpoint: TransactionOutpoint,
+        outpoint: TransactionOutpoint,
     ) -> anyhow::Result<TransactionOutput> {
-        todo!("implement output fetching")
+        let transaction_hash_hex = hex::encode(outpoint.txid);
+        let mut result = self
+            .db
+            .query("SELECT * FROM pending_transactions WHERE id = $id")
+            .bind((
+                "id",
+                SurrealID(Thing::from((
+                    "transaction_outputs".to_string(),
+                    format!(
+                        "{}:{}",
+                        transaction_hash_hex.clone().to_string(),
+                        outpoint.index
+                    ),
+                ))),
+            ))
+            .await
+            .map_err(|err| anyhow!(err))?;
+
+        let transaction_output_row_maybe: Option<TransactionOutputRow> = result.take(0)?;
+
+        match transaction_output_row_maybe {
+            Some(transaction_output_row) => {
+                if transaction_output_row.spent {
+                    return Err(anyhow!("cannot spend output twice"));
+                }
+
+                Ok(transaction_output_row.output)
+            }
+
+            None => Err(anyhow!("transaction hash not found!")),
+        }
     }
 
     async fn include_in_next_block(&mut self, transaction_hash: [u8; 32]) -> anyhow::Result<()> {
@@ -94,10 +122,25 @@ impl ExecutionContext for QuibleBlockProposerExecutionContextImpl {
 
     async fn record_invalid_transaction(
         &mut self,
-        _transaction_hash: [u8; 32],
-        _error: anyhow::Error,
+        transaction_hash: [u8; 32],
+        error: anyhow::Error,
     ) -> anyhow::Result<()> {
-        todo!("implement transaction invalidation")
+        dbg!(transaction_hash, error);
+
+        let transaction_hash_hex = hex::encode(transaction_hash);
+
+        self.db
+            .query("DELETE FROM pending_transactions WHERE id = $id")
+            .bind((
+                "id",
+                SurrealID(Thing::from((
+                    "pending_transactions".to_string(),
+                    transaction_hash_hex.clone().to_string(),
+                ))),
+            ))
+            .await?;
+
+        Ok(())
     }
 }
 
@@ -147,6 +190,23 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<AnyDb>>) {
         let block_header_hash = block_header.hash()?;
         let block_header_hash_hex = hex::encode(block_header_hash);
 
+        let transactions = execution_context
+            .included_transactions
+            .iter()
+            .map(|transaction_hash| {
+                Ok((
+                    transaction_hash.clone(),
+                    execution_context
+                        .transaction_cache
+                        .get(transaction_hash)
+                        .ok_or(anyhow!(
+                            "cannot find included transaction in transaction cache"
+                        ))?
+                        .clone(),
+                ))
+            })
+            .collect::<Result<Vec<([u8; 32], Transaction)>, anyhow::Error>>()?;
+
         db_arc
             .create::<Vec<BlockRow>>("blocks")
             .content(BlockRow {
@@ -157,24 +217,42 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<AnyDb>>) {
                 hash: block_header_hash_hex,
                 header: block_header,
                 height: block_number,
-                transactions: execution_context
-                    .included_transactions
-                    .iter()
-                    .map(|transaction_hash| {
-                        Ok((
-                            transaction_hash.clone(),
-                            execution_context
-                                .transaction_cache
-                                .get(transaction_hash)
-                                .ok_or(anyhow!(
-                                    "cannot find included transaction in transaction cache"
-                                ))?
-                                .clone(),
-                        ))
-                    })
-                    .collect::<Result<Vec<([u8; 32], Transaction)>, anyhow::Error>>()?,
+                transactions: transactions.clone(),
             })
             .await?;
+
+        for (transaction_hash, transaction) in transactions {
+            let Transaction::Version1 { outputs, .. } = transaction;
+
+            let transaction_hash_hex = hex::encode(transaction_hash);
+
+            for (index, output) in outputs.iter().enumerate() {
+                db_arc
+                    .create::<Vec<TransactionOutputRow>>("transaction_outputs")
+                    .content(TransactionOutputRow {
+                        id: SurrealID(Thing::from((
+                            "transaction_outputs".to_string(),
+                            format!("{}:{}", transaction_hash_hex.clone().to_string(), index),
+                        ))),
+                        transaction_hash: transaction_hash_hex.clone(),
+                        output_index: index.try_into()?,
+                        output: output.clone(),
+                        spent: false,
+                    })
+                    .await?;
+
+                db_arc
+                    .query("DELETE FROM pending_transactions WHERE id = $id")
+                    .bind((
+                        "id",
+                        SurrealID(Thing::from((
+                            "pending_transactions".to_string(),
+                            transaction_hash_hex.clone().to_string(),
+                        ))),
+                    ))
+                    .await?;
+            }
+        }
 
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     }
@@ -584,6 +662,11 @@ mod tests {
                 assert_eq!(transaction_hash, sample_transaction.hash()?);
             }
         }
+
+        let pending_transaction_rows: Vec<PendingTransactionRow> =
+            db_arc.select("pending_transactions").await?;
+
+        assert_eq!(pending_transaction_rows.len(), 0);
 
         Ok(())
     }

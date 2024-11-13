@@ -1,5 +1,5 @@
+use crate::tx::types::{BlockHeader, Transaction, TransactionOutput};
 use serde::{Deserialize, Serialize};
-use crate::tx::types::{BlockHeader, Transaction};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurrealID(pub surrealdb::sql::Thing);
@@ -27,4 +27,13 @@ pub struct BlockRow {
     pub header: BlockHeader,
     pub height: u64,
     pub transactions: Vec<([u8; 32], Transaction)>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransactionOutputRow {
+    pub id: SurrealID,
+    pub transaction_hash: String,
+    pub output_index: u64,
+    pub output: TransactionOutput,
+    pub spent: bool,
 }

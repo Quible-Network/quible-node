@@ -70,5 +70,16 @@ pub async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
     db.query("DEFINE FIELD address ON quirkle_items TYPE string;")
         .await?;
 
+    db.query("DEFINE TABLE transaction_outputs SCHEMAFULL;")
+        .await?;
+    db.query("DEFINE FIELD transaction_hash ON transaction_outputs TYPE string;")
+        .await?;
+    db.query("DEFINE FIELD output_index ON transaction_outputs TYPE int;")
+        .await?;
+    db.query("DEFINE FIELD output ON transaction_outputs FLEXIBLE TYPE object;")
+        .await?;
+    db.query("DEFINE FIELD spent ON transaction_outputs TYPE bool;")
+        .await?;
+
     Ok(())
 }
