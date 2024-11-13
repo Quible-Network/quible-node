@@ -15,15 +15,12 @@ pub async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
     // Create table for blocks
     db.query("DEFINE TABLE blocks SCHEMAFULL;").await?;
     db.query("DEFINE FIELD hash ON blocks TYPE string;").await?;
-    db.query("DEFINE FIELD height ON blocks TYPE int;")
-        .await?;
+    db.query("DEFINE FIELD height ON blocks TYPE int;").await?;
     db.query("DEFINE FIELD header ON blocks FLEXIBLE TYPE object")
         .await?;
     // db.query("DEFINE FIELD header.data.timestamp ON blocks TYPE datetime;").await?;
     // db.query("DEFINE FIELD header.data.timestamp ON blocks TYPE int;").await?;
-    db.query("DEFINE FIELD transactions ON blocks TYPE array;")
-        .await?;
-    db.query("DEFINE FIELD transactions.* ON blocks FLEXIBLE TYPE object;")
+    db.query("DEFINE FIELD transactions ON blocks FLEXIBLE TYPE array;")
         .await?;
 
     // Create table for pending transactions
