@@ -35,9 +35,9 @@ tower-http = { version = "0.5.2", features = ["cors"] }
 [dev-dependencies]
 surrealdb = { version = "1.5.4", features = ["kv-mem"] }
 
-[[bin]]
-name = "client"
-path = "src/client.rs"
+#[[bin]]
+#name = "client"
+#path = "src/client.rs"
 
 [package.metadata.deb]
 maintainer-scripts = "pkg/deb/"

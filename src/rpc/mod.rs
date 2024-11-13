@@ -4,6 +4,7 @@ use jsonrpsee::proc_macros::rpc;
 // use jsonrpsee::rpc_params;
 use jsonrpsee::types::ErrorObjectOwned;
 
+use crate::tx::types::Transaction;
 use crate::types;
 
 #[rpc(server, client, namespace = "quible")]
@@ -12,17 +13,11 @@ pub trait QuibleRpc {
     #[method(name = "sendTransaction")]
     async fn send_transaction(
         &self,
-        transaction: types::Transaction,
-    ) -> Result<types::Transaction, ErrorObjectOwned>;
-
-    #[method(name = "requestProof")]
-    async fn request_proof(
-        &self,
-        quirkle_root: types::QuirkleRoot,
-        member_address: String,
-        requested_at_block_number: u128,
-    ) -> Result<types::QuirkleProof, ErrorObjectOwned>;
+        transaction: Transaction,
+    ) -> Result<(), ErrorObjectOwned>;
 
     #[method(name = "checkHealth")]
     async fn check_health(&self) -> Result<types::HealthCheckResponse, ErrorObjectOwned>;
+
+    // TODO: https://linear.app/quible/issue/QUI-98/utxo-certificate-issuance
 }

@@ -75,6 +75,7 @@ pub struct ObjectIdentifier {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
 pub enum TransactionOutput {
     Value {
         #[serde(with = "postcard::fixint::le")]
@@ -90,6 +91,7 @@ pub enum TransactionOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "version", content = "data")]
 pub enum Transaction {
     Version1 {
         inputs: Vec<TransactionInput>,

@@ -1,10 +1,10 @@
-use crate::types::{Event, TransactionHash};
+use crate::types::Event;
 // use jsonrpsee::core::client::ClientT;
 // use jsonrpsee::http_client::HttpClient;
 // use jsonrpsee::rpc_params;
 use sha3::{Digest, Keccak256};
 
-pub fn compute_transaction_hash(events: &Vec<Event>) -> TransactionHash {
+pub fn compute_transaction_hash(events: &Vec<Event>) -> [u8; 32] {
     let mut data = Vec::<u8>::new();
 
     for event in events {
