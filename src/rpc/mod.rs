@@ -11,10 +11,7 @@ use crate::types;
 pub trait QuibleRpc {
     // for some reason the macro makes RpcServerServer
     #[method(name = "sendTransaction")]
-    async fn send_transaction(
-        &self,
-        transaction: Transaction,
-    ) -> Result<(), ErrorObjectOwned>;
+    async fn send_transaction(&self, transaction: Transaction) -> Result<(), ErrorObjectOwned>;
 
     #[method(name = "checkHealth")]
     async fn check_health(&self) -> Result<types::HealthCheckResponse, ErrorObjectOwned>;
