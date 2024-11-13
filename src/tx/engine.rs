@@ -2,9 +2,12 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use sha3::{Digest, Keccak256};
 
-use crate::tx::types::{ObjectMode, Transaction, TransactionInput};
+use crate::{
+    quible_ecdsa_utils::recover_signer_unchecked,
+    tx::types::{ObjectMode, Transaction, TransactionInput, TransactionOpCode},
+};
 
-use super::types::{ObjectIdentifier, TransactionOutpoint, TransactionOutput};
+use super::types::{Hashable, ObjectIdentifier, TransactionOutpoint, TransactionOutput};
 
 #[async_trait]
 pub trait ExecutionContext {
@@ -48,7 +51,7 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
     {
         let Transaction::Version1 {
             inputs, outputs, ..
-        } = transaction;
+        } = transaction.clone();
 
         let execute_transaction = async {
             let mut spent_outpoints = Vec::<TransactionOutpoint>::new();
@@ -73,8 +76,100 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
                 let output_being_spent = context.fetch_unspent_output(outpoint.clone()).await?;
                 spent_outpoints.push(outpoint.clone());
 
-                // TODO: verify signature script has only data pushes
-                // TODO: execute signature script followed by input's pubkey script
+                let mut stack: Vec<Vec<u8>> = vec![];
+
+                for opcode in signature_script {
+                    match opcode {
+                        TransactionOpCode::Push { data } => {
+                            stack.push(data.clone());
+                        }
+
+                        _ => {
+                            return Err(anyhow!("only pushes are allowed in signature scripts"));
+                        }
+                    }
+                }
+
+                let pubkey_script = match output_being_spent.clone() {
+                    TransactionOutput::Value { pubkey_script, .. } => pubkey_script,
+                    TransactionOutput::Object { pubkey_script, .. } => pubkey_script,
+                };
+
+                for opcode in pubkey_script {
+                    match opcode {
+                        TransactionOpCode::Dup => {
+                            let maybe_item = stack.pop();
+                            if let Some(item) = maybe_item {
+                                stack.push(item.clone());
+                                stack.push(item);
+                            }
+                        }
+
+                        TransactionOpCode::Push { data } => {
+                            stack.push(data.clone());
+                        }
+
+                        TransactionOpCode::EqualVerify => {
+                            let left_maybe = stack.pop();
+                            let right_maybe = stack.pop();
+
+                            match (left_maybe, right_maybe) {
+                                (Some(left), Some(right)) => {
+                                    if left != right {
+                                        return Err(anyhow!("pubkey script failed"));
+                                    }
+                                }
+
+                                _ => {
+                                    return Err(anyhow!("pubkey script failed"));
+                                }
+                            }
+                        }
+
+                        TransactionOpCode::CheckSigVerify => {
+                            let pubkey_maybe = stack.pop();
+                            let sig_maybe = stack.pop();
+
+                            match (pubkey_maybe, sig_maybe) {
+                                (Some(pubkey), Some(sig)) => {
+                                    let signable_transaction = &mut transaction.to_owned();
+                                    match signable_transaction {
+                                        Transaction::Version1 { inputs, .. } => {
+                                            for input in inputs.iter_mut() {
+                                                *input = TransactionInput {
+                                                    outpoint: input.clone().outpoint,
+                                                    signature_script: vec![],
+                                                };
+                                            }
+                                        }
+                                    }
+
+                                    let signable_transaction_hash = signable_transaction.hash()?;
+                                    let sig_slice: [u8; 65] = sig.try_into().map_err(|_| {
+                                        anyhow!("pubkey script failed (signature is not 65 bytes)")
+                                    })?;
+
+                                    let signer = recover_signer_unchecked(
+                                        &sig_slice,
+                                        &signable_transaction_hash,
+                                    )?;
+                                    let signer_slice = signer.into_array().to_vec();
+                                    if pubkey != signer_slice {
+                                        return Err(anyhow!(
+                                            "pubkey script failed (signer does not match pubkey)"
+                                        ));
+                                    }
+                                }
+
+                                _ => {
+                                    return Err(anyhow!("pubkey script failed"));
+                                }
+                            }
+                        }
+
+                        _ => {}
+                    }
+                }
 
                 match output_being_spent {
                     TransactionOutput::Value { value, .. } => {
@@ -213,11 +308,13 @@ pub fn compute_fresh_object_id(inputs: Vec<TransactionInput>, index: u32) -> Obj
 mod tests {
     use std::collections::HashMap;
 
+    use crate::quible_ecdsa_utils::sign_message;
     use crate::tx::engine::execute_transaction;
     use crate::tx::types::{
-        Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionInput, TransactionOutpoint,
-        TransactionOutput,
+        Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionInput, TransactionOpCode,
+        TransactionOutpoint, TransactionOutput,
     };
+    use alloy_primitives::{Address, B256};
     use anyhow::anyhow;
     use async_trait::async_trait;
 
@@ -466,6 +563,98 @@ mod tests {
             format!("{}", err.root_cause()),
             "output value exceeds input value"
         );
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn pubkey_script() -> anyhow::Result<()> {
+        let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+        let signer_address = Address::from_private_key(&signer_secret);
+
+        // TODO: https://linear.app/quible/issue/QUI-95/refactor-transaction-signing
+        let create_subcontext =
+            |include_signature: bool| -> anyhow::Result<TestingExecutionContext> {
+                let coinbase = Transaction::Version1 {
+                    inputs: vec![],
+                    outputs: vec![TransactionOutput::Value {
+                        value: 5,
+                        pubkey_script: vec![
+                            TransactionOpCode::Dup,
+                            TransactionOpCode::Push {
+                                data: signer_address.into_array().to_vec(),
+                            },
+                            TransactionOpCode::EqualVerify,
+                            TransactionOpCode::CheckSigVerify,
+                        ],
+                    }],
+                    locktime: 0,
+                };
+
+                let coinbase_hash = coinbase.hash()?;
+
+                let transaction = &mut Transaction::Version1 {
+                    inputs: vec![TransactionInput {
+                        outpoint: TransactionOutpoint {
+                            txid: coinbase_hash,
+                            index: 0,
+                        },
+                        signature_script: vec![],
+                    }],
+                    outputs: vec![TransactionOutput::Value {
+                        value: 5,
+                        pubkey_script: vec![],
+                    }],
+                    locktime: 0,
+                }
+                .to_owned();
+
+                let signature = sign_message(
+                    B256::from_slice(&signer_secret.to_bytes()[..]),
+                    transaction.hash()?.into(),
+                )?
+                .to_vec();
+
+                if include_signature {
+                    match transaction {
+                        Transaction::Version1 { inputs, .. } => {
+                            for input in inputs.iter_mut() {
+                                *input = TransactionInput {
+                                    outpoint: input.clone().outpoint,
+                                    signature_script: vec![
+                                        TransactionOpCode::Push {
+                                            data: signature.clone(),
+                                        },
+                                        TransactionOpCode::Push {
+                                            data: signer_address.into_array().to_vec(),
+                                        },
+                                    ],
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Ok(create_context(vec![coinbase], vec![transaction.clone()]))
+            };
+
+        let mut failure_context = create_subcontext(false)?;
+
+        collect_valid_block_transactions(&mut failure_context).await?;
+
+        assert_eq!(failure_context.included_transactions.len(), 0);
+        let failure_count = failure_context.failed_transactions.len();
+        assert_eq!(failure_count, 1);
+        let err = &failure_context.failed_transactions.get(0).unwrap().1;
+        assert_eq!(format!("{}", err.root_cause()), "pubkey script failed");
+
+        let mut context = create_subcontext(true)?;
+
+        collect_valid_block_transactions(&mut context).await?;
+
+        assert_eq!(context.included_transactions.len(), 1);
+        let failure_count = context.failed_transactions.len();
+        assert_eq!(failure_count, 0);
 
         Ok(())
     }
