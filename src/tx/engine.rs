@@ -40,6 +40,24 @@ pub trait ExecutionContext {
     ) -> anyhow::Result<()>;
 }
 
+pub fn compute_object_id(
+    inputs: Vec<TransactionInput>,
+    output_index: u32,
+) -> anyhow::Result<[u8; 32]> {
+    let mut hasher = Keccak256::new();
+    for input in inputs {
+        hasher.update(input.outpoint.txid);
+        hasher.update(bytemuck::cast::<u32, [u8; 4]>(input.outpoint.index));
+    }
+    hasher.update(bytemuck::cast::<u32, [u8; 4]>(output_index));
+
+    hasher
+        .finalize()
+        .as_slice()
+        .try_into()
+        .map_err(|_| anyhow!("failed to slice Keccak256 hash to 32 bytes"))
+}
+
 // pulls pending transactions from context and executes
 // them one-by-one until no more pending transactions
 // will fit in the block
@@ -188,7 +206,51 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
                         output_value += value;
                     }
 
-                    _ => {}
+                    TransactionOutput::Object { object_id, .. } => {
+                        match object_id.mode {
+                            ObjectMode::Fresh => {
+                                let expected_object_id =
+                                    compute_object_id(inputs.clone(), index.try_into()?)?;
+
+                                if object_id.raw != expected_object_id {
+                                    return Err(anyhow!("object id invalid"));
+                                }
+                            }
+
+                            ObjectMode::Existing { permit_index } => {
+                                let permit_index_usize: usize = permit_index.try_into()?;
+
+                                match inputs.clone().get(permit_index_usize) {
+                                    Some(input) => {
+                                        let output_being_spent = context
+                                            .fetch_unspent_output(input.outpoint.clone())
+                                            .await?;
+
+                                        match output_being_spent {
+                                            TransactionOutput::Value { .. } => {
+                                                return Err(anyhow!(
+                                                    "non-object output cannot be used as a permit"
+                                                ));
+                                            }
+
+                                            TransactionOutput::Object {
+                                                object_id: permit_object_id,
+                                                ..
+                                            } => {
+                                                if object_id.raw != permit_object_id.raw {
+                                                    return Err(anyhow!("object id does not match permitted object id"));
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    None => {
+                                        return Err(anyhow!("permit index out of bounds"));
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -318,7 +380,7 @@ mod tests {
     use anyhow::anyhow;
     use async_trait::async_trait;
 
-    use super::{collect_valid_block_transactions, ExecutionContext};
+    use super::{collect_valid_block_transactions, compute_object_id, ExecutionContext};
 
     struct TestingExecutionContext {
         pub transaction_map: HashMap<[u8; 32], Transaction>,
@@ -647,6 +709,146 @@ mod tests {
         assert_eq!(failure_count, 1);
         let err = &failure_context.failed_transactions.get(0).unwrap().1;
         assert_eq!(format!("{}", err.root_cause()), "pubkey script failed");
+
+        let mut context = create_subcontext(true)?;
+
+        collect_valid_block_transactions(&mut context).await?;
+
+        assert_eq!(context.included_transactions.len(), 1);
+        let failure_count = context.failed_transactions.len();
+        assert_eq!(failure_count, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn validates_fresh_object_id() -> anyhow::Result<()> {
+        let create_subcontext =
+            |include_computed_object_id: bool| -> anyhow::Result<TestingExecutionContext> {
+                let coinbase = Transaction::Version1 {
+                    inputs: vec![],
+                    outputs: vec![TransactionOutput::Value {
+                        value: 5,
+                        pubkey_script: vec![],
+                    }],
+                    locktime: 0,
+                };
+
+                let coinbase_hash = coinbase.hash()?;
+
+                let inputs = vec![TransactionInput {
+                    outpoint: TransactionOutpoint {
+                        txid: coinbase_hash,
+                        index: 0,
+                    },
+                    signature_script: vec![],
+                }];
+
+                let object_id = ObjectIdentifier {
+                    raw: if include_computed_object_id {
+                        compute_object_id(inputs.clone(), 0)?
+                    } else {
+                        [0u8; 32]
+                    },
+                    mode: ObjectMode::Fresh,
+                };
+
+                let transaction = Transaction::Version1 {
+                    inputs,
+                    outputs: vec![TransactionOutput::Object {
+                        object_id,
+                        data_script: vec![],
+                        pubkey_script: vec![],
+                    }],
+                    locktime: 0,
+                };
+
+                Ok(create_context(vec![coinbase], vec![transaction]))
+            };
+
+        let mut failure_context = create_subcontext(false)?;
+
+        collect_valid_block_transactions(&mut failure_context).await?;
+
+        assert_eq!(failure_context.included_transactions.len(), 0);
+        let failure_count = failure_context.failed_transactions.len();
+        assert_eq!(failure_count, 1);
+        let err = &failure_context.failed_transactions.get(0).unwrap().1;
+        assert_eq!(format!("{}", err.root_cause()), "object id invalid");
+
+        let mut context = create_subcontext(true)?;
+
+        collect_valid_block_transactions(&mut context).await?;
+
+        assert_eq!(context.included_transactions.len(), 1);
+        let failure_count = context.failed_transactions.len();
+        assert_eq!(failure_count, 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn existed_object_id_must_match_permitted_object() -> anyhow::Result<()> {
+        let create_subcontext =
+            |include_matching_object_id: bool| -> anyhow::Result<TestingExecutionContext> {
+                let object_id_raw = compute_object_id(vec![], 0)?;
+                let coinbase = Transaction::Version1 {
+                    inputs: vec![],
+                    outputs: vec![TransactionOutput::Object {
+                        object_id: ObjectIdentifier {
+                            raw: object_id_raw,
+                            mode: ObjectMode::Fresh,
+                        },
+                        data_script: vec![],
+                        pubkey_script: vec![],
+                    }],
+                    locktime: 0,
+                };
+
+                let coinbase_hash = coinbase.hash()?;
+
+                let inputs = vec![TransactionInput {
+                    outpoint: TransactionOutpoint {
+                        txid: coinbase_hash,
+                        index: 0,
+                    },
+                    signature_script: vec![],
+                }];
+
+                let object_id = ObjectIdentifier {
+                    raw: if include_matching_object_id {
+                        object_id_raw
+                    } else {
+                        [0u8; 32]
+                    },
+                    mode: ObjectMode::Existing { permit_index: 0 },
+                };
+
+                let transaction = Transaction::Version1 {
+                    inputs,
+                    outputs: vec![TransactionOutput::Object {
+                        object_id,
+                        data_script: vec![],
+                        pubkey_script: vec![],
+                    }],
+                    locktime: 0,
+                };
+
+                Ok(create_context(vec![coinbase], vec![transaction]))
+            };
+
+        let mut failure_context = create_subcontext(false)?;
+
+        collect_valid_block_transactions(&mut failure_context).await?;
+
+        assert_eq!(failure_context.included_transactions.len(), 0);
+        let failure_count = failure_context.failed_transactions.len();
+        assert_eq!(failure_count, 1);
+        let err = &failure_context.failed_transactions.get(0).unwrap().1;
+        assert_eq!(
+            format!("{}", err.root_cause()),
+            "object id does not match permitted object id"
+        );
 
         let mut context = create_subcontext(true)?;
 
