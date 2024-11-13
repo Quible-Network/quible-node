@@ -8,7 +8,7 @@ use jsonrpsee::{server::Server, types::ErrorObjectOwned};
 use libp2p::{multiaddr, noise, ping, swarm::SwarmEvent, tcp, yamux};
 use serde::{Deserialize, Serialize};
 use tx::engine::{collect_valid_block_transactions, ExecutionContext};
-use tx::types::{Hashable, Transaction, TransactionOutpoint, TransactionOutput};
+use tx::types::{Block, BlockHeader, Hashable, Transaction, TransactionOutpoint, TransactionOutput};
 use std::env;
 use std::fs;
 use std::net::SocketAddr;
@@ -24,7 +24,7 @@ use tokio::{
 };
 use tower_http::cors::{Any, CorsLayer};
 use types::HealthCheckResponse;
-use db::types::{PendingTransactionRow, SurrealID, TrackerPing};
+use db::types::{BlockRow, PendingTransactionRow, SurrealID, TrackerPing};
 
 use rpc::QuibleRpcServer;
 
@@ -52,7 +52,7 @@ impl ExecutionContext for QuibleBlockProposerExecutionContextImpl {
     async fn fetch_next_pending_transaction(
         &mut self,
     ) -> anyhow::Result<Option<([u8; 32], Transaction)>> {
-        todo!("implement pending transaction fetching")
+        Ok(None)
     }
 
     async fn fetch_unspent_output(
@@ -82,11 +82,50 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<AnyDb>>) {
     println!("new block! {}", block_number);
 
     let result = async {
+        let previous_block_header: Option<BlockHeader> = db_arc
+            .query("SELECT header FROM blocks WHERE height = $height")
+            .bind(("height", block_number - 1))
+            .await
+            .and_then(|mut response| response.take((0, "header")))?;
+
         let mut execution_context = QuibleBlockProposerExecutionContextImpl {
             db: db_arc.clone()
         };
 
+        let timestamp: u64 = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| {
+                ErrorDb::Thrown(format!("Failed to generate timestamp: {}", e).into())
+            })?
+            .as_secs();
+
         collect_valid_block_transactions(&mut execution_context).await?;
+
+        let previous_block_header_hash = previous_block_header.map_or(Ok([0u8; 32]), |h| {
+            h.hash()
+        })?;
+
+        let block_header = BlockHeader::Version1 {
+            previous_block_header_hash,
+            merkle_root: [0u8; 32],
+            timestamp
+        };
+
+        let block_header_hash = block_header.hash()?;
+        let block_header_hash_hex = hex::encode(block_header_hash);
+
+        db_arc.create::<Vec<BlockRow>>("blocks")
+            .content(BlockRow {
+                id: SurrealID(Thing::from((
+                    "pending_transactions".to_string(),
+                    block_header_hash_hex.clone().to_string(),
+                ))),
+                hash: block_header_hash_hex,
+                header: block_header,
+                height: block_number,
+                transactions: vec![]
+            })
+            .await?;
 
         Ok(()) as Result<(), Box<dyn std::error::Error>>
     }.await;
@@ -333,8 +372,10 @@ async fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use crate::db::types::{BlockRow, PendingTransactionRow};
+    use crate::propose_block;
     use crate::rpc::QuibleRpcClient;
-    use crate::tx::types::{Transaction, TransactionOutput};
+    use crate::tx::types::{Hashable, Transaction, TransactionInput, TransactionOutpoint, TransactionOutput};
     use jsonrpsee::http_client::HttpClient;
     use super::{db, run_derive_server};
     use std::sync::Arc;
@@ -374,7 +415,7 @@ mod tests {
         dbg!("response: {:?}", response);
 
         // Query pending transactions from SurrealDB
-        let pending_transaction_rows: Vec<super::db::types::PendingTransactionRow> =
+        let pending_transaction_rows: Vec<PendingTransactionRow> =
             db_arc.select("pending_transactions").await?;
 
         assert_eq!(pending_transaction_rows.len(), 1);
@@ -384,6 +425,118 @@ mod tests {
                 "Transaction Data: {}",
                 serde_json::to_string_pretty(&row.data)?
             );
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_proposes_block_with_no_transactions() -> anyhow::Result<()> {
+        // Initialize SurrealDB
+        let db = any::connect("memory").await?;
+        db.use_ns("quible").use_db("quible_node").await?;
+        db::schema::initialize_db(&db).await?;
+
+        let db_arc = Arc::new(db);
+
+        let server_addr = run_derive_server(
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
+            &db_arc,
+            0,
+        )
+        .await?;
+        let url = format!("http://{}", server_addr);
+        println!("server listening at {}", url);
+
+        propose_block(1, &db_arc).await;
+
+        // Query pending transactions from SurrealDB
+        let block_rows: Vec<BlockRow> =
+            db_arc.select("blocks").await?;
+
+        assert_eq!(block_rows.len(), 1);
+        for row in block_rows {
+            println!("Block Hash: {}", row.hash);
+            println!(
+                "Block Header: {}",
+                serde_json::to_string_pretty(&row.header)?
+            );
+        }
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_accepts_valid_transactions() -> anyhow::Result<()> {
+        // Initialize SurrealDB
+        let db = any::connect("memory").await?;
+        db.use_ns("quible").use_db("quible_node").await?;
+        db::schema::initialize_db(&db).await?;
+
+        let db_arc = Arc::new(db);
+
+        let server_addr = run_derive_server(
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
+            &db_arc,
+            0,
+        )
+        .await?;
+        let url = format!("http://{}", server_addr);
+        println!("server listening at {}", url);
+        let client = HttpClient::builder().build(url)?;
+        // let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+        let sample_transaction = Transaction::Version1 {
+            inputs: vec![],
+            outputs: vec![
+                TransactionOutput::Value {
+                    value: 0,
+                    pubkey_script: vec![],
+                }
+            ],
+            locktime: 0
+        };
+
+        let sample_invalid_transaction = Transaction::Version1 {
+            inputs: vec![
+                TransactionInput {
+                    outpoint: TransactionOutpoint {
+                        txid: [0u8; 32],
+                        index: 0
+                    },
+                    signature_script: vec![]
+                }
+            ],
+            outputs: vec![
+                TransactionOutput::Value {
+                    value: 0,
+                    pubkey_script: vec![],
+                }
+            ],
+            locktime: 0
+        };
+
+        client.send_transaction(sample_transaction.clone()).await.unwrap();
+        client.send_transaction(sample_invalid_transaction.clone()).await.unwrap();
+
+        propose_block(1, &db_arc).await;
+
+        // Query pending transactions from SurrealDB
+        let block_rows: Vec<BlockRow> =
+            db_arc.select("blocks").await?;
+
+        assert_eq!(block_rows.len(), 1);
+        for row in block_rows {
+            println!("Block Hash: {}", row.hash);
+            println!(
+                "Block Header: {}",
+                serde_json::to_string_pretty(&row.header)?
+            );
+
+            assert_eq!(row.transactions.len(), 1);
+
+            for (transaction_hash, _transaction) in row.transactions {
+                assert_eq!(transaction_hash, sample_transaction.hash()?);
+            }
         }
 
         Ok(())

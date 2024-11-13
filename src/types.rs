@@ -14,14 +14,6 @@ pub struct PendingTransactionRow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockRow {
-    pub hash: String,
-    pub block_number: u64,
-    pub timestamp: u64,
-    pub transactions: Vec<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TrackerPing {
     pub peer_id: String,
     pub timestamp: u64,
