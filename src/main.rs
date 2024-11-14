@@ -74,7 +74,7 @@ impl ExecutionContext for QuibleBlockProposerExecutionContextImpl {
         let transaction_hash_hex = hex::encode(outpoint.txid);
         let mut result = self
             .db
-            .query("SELECT * FROM pending_transactions WHERE id = $id")
+            .query("SELECT * FROM transaction_outputs WHERE id = $id")
             .bind((
                 "id",
                 SurrealID(Thing::from((
