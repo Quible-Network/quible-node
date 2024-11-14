@@ -212,6 +212,8 @@ async fn propose_block(
         inputs: vec![],
         outputs: vec![TransactionOutput::Value {
             value: 5,
+
+            // TODO: https://linear.app/quible/issue/QUI-103/ensure-coinbase-transactions-can-only-be-spent-by-block-proposer
             pubkey_script: vec![],
         }],
         locktime: 0,
