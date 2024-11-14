@@ -689,4 +689,84 @@ mod tests {
 
         Ok(())
     }
+
+    #[tokio::test]
+    async fn transactions_can_spend_outputs_from_previous_blocks() -> anyhow::Result<()> {
+        // Initialize SurrealDB
+        let db = any::connect("memory").await?;
+        db.use_ns("quible").use_db("quible_node").await?;
+        db::schema::initialize_db(&db).await?;
+
+        let db_arc = Arc::new(db);
+
+        let server_addr = run_derive_server(
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
+            &db_arc,
+            0,
+        ).await?;
+        let url = format!("http://{}", server_addr);
+        println!("server listening at {}", url);
+
+        let block_row = propose_block(1, &db_arc).await?;
+
+        let coinbase_transaction_hash = match &block_row.transactions[..] {
+            [(hash, _), ] => Ok(*hash),
+            _ => Err(anyhow!("missing coinbase transaction"))
+        }?;
+
+        let client = HttpClient::builder().build(url)?;
+        // let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+        let sample_first_transaction = Transaction::Version1 {
+            inputs: vec![
+                TransactionInput {
+                    outpoint: TransactionOutpoint {
+                        txid: coinbase_transaction_hash,
+                        index: 0
+                    },
+                    signature_script: vec![]
+                }
+            ],
+            outputs: vec![TransactionOutput::Value {
+                value: 0,
+                pubkey_script: vec![],
+            }],
+            locktime: 0,
+        };
+
+        client
+            .send_transaction(sample_first_transaction.clone())
+            .await
+            .unwrap();
+
+        propose_block(2, &db_arc).await?;
+
+        // Query pending transactions from SurrealDB
+        let mut result = db_arc.query("SELECT * FROM blocks ORDER BY height ASC").await?;
+        let block_rows: Vec<BlockRow> = result.take(0)?;
+
+        match &block_rows[..] {
+            [_, second_block_row] => {
+                match second_block_row.transactions[..] {
+                    [_, (transaction_hash, _)] => {
+                        assert_eq!(transaction_hash, sample_first_transaction.hash()?);
+                        Ok(())
+                    }
+
+                    _ => {
+                        dbg!(second_block_row);
+                        Err(anyhow!("unexpected number of transactions"))
+                    }
+                }
+            }
+
+            _ => Err(anyhow!("unexpected number of block rows"))
+        }?;
+
+        let pending_transaction_rows: Vec<PendingTransactionRow> =
+            db_arc.select("pending_transactions").await?;
+
+        assert_eq!(pending_transaction_rows.len(), 0);
+
+        Ok(())
+    }
 }
