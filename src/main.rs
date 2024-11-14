@@ -191,7 +191,7 @@ async fn propose_block(
     let block_header_hash = block_header.hash()?;
     let block_header_hash_hex = hex::encode(block_header_hash);
 
-    let transactions = execution_context
+    let mut transactions = execution_context
         .included_transactions
         .iter()
         .map(|transaction_hash| {
@@ -207,6 +207,14 @@ async fn propose_block(
             ))
         })
         .collect::<Result<Vec<([u8; 32], Transaction)>, anyhow::Error>>()?;
+
+    let coinbase_transaction = Transaction::Version1 {
+        inputs: vec![],
+        outputs: vec![TransactionOutput::Value { value: 5, pubkey_script: vec![] }],
+        locktime: 0
+    };
+
+    transactions.insert(0, (coinbase_transaction.hash()?, coinbase_transaction));
 
     let block_row = BlockRow {
         id: SurrealID(Thing::from((
@@ -510,6 +518,7 @@ mod tests {
     use crate::tx::types::{
         Hashable, Transaction, TransactionInput, TransactionOutpoint, TransactionOutput,
     };
+    use anyhow::anyhow;
     use jsonrpsee::http_client::HttpClient;
     use std::sync::Arc;
     use surrealdb::engine::any;
@@ -662,11 +671,15 @@ mod tests {
                 serde_json::to_string_pretty(&row.header)?
             );
 
-            assert_eq!(row.transactions.len(), 1);
+            match row.transactions[..] {
+                [(coinbase_transaction_hash, _), (first_transaction_hash, _)] => {
+                    assert_ne!(coinbase_transaction_hash, sample_invalid_transaction.hash()?);
+                    assert_eq!(first_transaction_hash, sample_transaction.hash()?);
+                    Ok(())
+                }
 
-            for (transaction_hash, _transaction) in row.transactions {
-                assert_eq!(transaction_hash, sample_transaction.hash()?);
-            }
+                _ => Err(anyhow!("unexpected number of transactions"))
+            }?;
         }
 
         let pending_transaction_rows: Vec<PendingTransactionRow> =
