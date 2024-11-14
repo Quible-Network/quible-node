@@ -1,6 +1,8 @@
 use anyhow::anyhow;
 use async_trait::async_trait;
-use db::types::{BlockRow, PendingTransactionRow, SurrealID, TrackerPing, TransactionOutputRow};
+use db::types::{
+    BlockRow, ObjectRow, PendingTransactionRow, SurrealID, TrackerPing, TransactionOutputRow,
+};
 use futures::prelude::stream::StreamExt;
 use hex;
 use hyper::Method;
@@ -25,7 +27,10 @@ use tokio::{
 };
 use tower_http::cors::{Any, CorsLayer};
 use tx::engine::{collect_valid_block_transactions, ExecutionContext};
-use tx::types::{BlockHeader, Hashable, Transaction, TransactionOutpoint, TransactionOutput};
+use tx::types::{
+    BlockHeader, Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionOpCode,
+    TransactionOutpoint, TransactionOutput,
+};
 use types::HealthCheckResponse;
 
 use rpc::QuibleRpcServer;
@@ -144,6 +149,65 @@ impl ExecutionContext for QuibleBlockProposerExecutionContextImpl {
     }
 }
 
+async fn digest_object_output(
+    db: &Arc<Surreal<AnyDb>>,
+    object_id: &ObjectIdentifier,
+    data_script: &Vec<TransactionOpCode>,
+) -> anyhow::Result<()> {
+    let object_id_hex = hex::encode(object_id.raw);
+    let surreal_object_id = SurrealID(Thing::from((
+        "objects".to_string(),
+        object_id_hex.to_string(),
+    )));
+
+    if let ObjectMode::Fresh = object_id.mode {
+        let _result: Vec<ObjectRow> = db
+            .create("objects")
+            .content(ObjectRow {
+                id: surreal_object_id.clone(),
+                object_id: object_id_hex,
+                claims: vec![],
+                cert_ttl: 86400,
+            })
+            .await?;
+    };
+
+    for opcode in data_script {
+        match opcode {
+            TransactionOpCode::DeleteAll => {
+                db.query("UPDATE objects SET claims = [] WHERE id = $id")
+                    .bind(("id", surreal_object_id.clone()))
+                    .await?;
+            }
+
+            TransactionOpCode::Insert { data } => {
+                db.query("UPDATE objects SET claims += $value WHERE id = $id")
+                    .bind(("id", surreal_object_id.clone()))
+                    .bind(("value", surrealdb::sql::Bytes::from(data.clone())))
+                    .await?;
+            }
+
+            TransactionOpCode::Delete { data } => {
+                db.query("UPDATE objects SET claims -= $value WHERE id = $id")
+                    .bind(("id", surreal_object_id.clone()))
+                    .bind(("value", surrealdb::sql::Bytes::from(data.clone())))
+                    .await?;
+            }
+
+            TransactionOpCode::SetCertTTL { data } => {
+                db.query("UPDATE objects SET cert_ttl = $value WHERE id = $id")
+                    .bind(("id", surreal_object_id.clone()))
+                    .bind(("value", data))
+                    .await?;
+            }
+
+            _ => {}
+        }
+    }
+
+    Ok(())
+}
+
 async fn propose_block(
     block_number: u64,
     db_arc: &Arc<Surreal<AnyDb>>,
@@ -256,6 +320,18 @@ async fn propose_block(
                     spent: false,
                 })
                 .await?;
+
+            match output {
+                TransactionOutput::Object {
+                    object_id,
+                    data_script,
+                    ..
+                } => {
+                    digest_object_output(&db_arc, object_id, data_script).await?;
+                }
+
+                _ => {}
+            }
         }
 
         db_arc
@@ -517,11 +593,13 @@ async fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{db, run_derive_server};
-    use crate::db::types::{BlockRow, PendingTransactionRow};
+    use crate::db::types::{BlockRow, ObjectRow, PendingTransactionRow};
     use crate::propose_block;
     use crate::rpc::QuibleRpcClient;
+    use crate::tx::engine::compute_object_id;
     use crate::tx::types::{
-        Hashable, Transaction, TransactionInput, TransactionOutpoint, TransactionOutput,
+        Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionInput, TransactionOpCode,
+        TransactionOutpoint, TransactionOutput,
     };
     use anyhow::anyhow;
     use jsonrpsee::http_client::HttpClient;
@@ -612,7 +690,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_accepts_valid_transactions() -> anyhow::Result<()> {
+    async fn accepts_valid_transactions_and_excludes_invalid_transactions() -> anyhow::Result<()> {
         // Initialize SurrealDB
         let db = any::connect("memory").await?;
         db.use_ns("quible").use_db("quible_node").await?;
@@ -773,6 +851,102 @@ mod tests {
             db_arc.select("pending_transactions").await?;
 
         assert_eq!(pending_transaction_rows.len(), 0);
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn accepts_transactions_with_object_outputs() -> anyhow::Result<()> {
+        // Initialize SurrealDB
+        let db = any::connect("memory").await?;
+        db.use_ns("quible").use_db("quible_node").await?;
+        db::schema::initialize_db(&db).await?;
+
+        let db_arc = Arc::new(db);
+
+        let server_addr = run_derive_server(
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
+            &db_arc,
+            0,
+        )
+        .await?;
+        let url = format!("http://{}", server_addr);
+        println!("server listening at {}", url);
+        let client = HttpClient::builder().build(url)?;
+        // let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+        let object_id_raw = compute_object_id(vec![], 0)?;
+        let sample_transaction = Transaction::Version1 {
+            inputs: vec![],
+            outputs: vec![TransactionOutput::Object {
+                object_id: ObjectIdentifier {
+                    raw: object_id_raw,
+                    mode: ObjectMode::Fresh,
+                },
+                data_script: vec![
+                    TransactionOpCode::Insert {
+                        data: vec![1, 2, 3],
+                    },
+                    TransactionOpCode::DeleteAll,
+                    TransactionOpCode::Insert {
+                        data: vec![4, 5, 6],
+                    },
+                    TransactionOpCode::Delete {
+                        data: vec![4, 5, 6],
+                    },
+                    TransactionOpCode::Insert {
+                        data: vec![7, 8, 9],
+                    },
+                ],
+                pubkey_script: vec![],
+            }],
+            locktime: 0,
+        };
+
+        client
+            .send_transaction(sample_transaction.clone())
+            .await
+            .unwrap();
+
+        propose_block(1, &db_arc).await?;
+
+        // Query pending transactions from SurrealDB
+        let block_rows: Vec<BlockRow> = db_arc.select("blocks").await?;
+
+        assert_eq!(block_rows.len(), 1);
+        for row in block_rows {
+            println!("Block Hash: {}", row.hash);
+            println!(
+                "Block Header: {}",
+                serde_json::to_string_pretty(&row.header)?
+            );
+
+            match row.transactions[..] {
+                [_, (first_transaction_hash, _)] => {
+                    assert_eq!(first_transaction_hash, sample_transaction.hash()?);
+                    Ok(())
+                }
+
+                _ => Err(anyhow!("unexpected number of transactions")),
+            }?;
+        }
+
+        let pending_transaction_rows: Vec<PendingTransactionRow> =
+            db_arc.select("pending_transactions").await?;
+
+        assert_eq!(pending_transaction_rows.len(), 0);
+
+        let object_rows: Vec<ObjectRow> = db_arc.select("objects").await?;
+
+        match &object_rows[..] {
+            [object_row] => {
+                assert_eq!(object_row.object_id, hex::encode(object_id_raw));
+                assert_eq!(object_row.claims, vec![vec![7, 8, 9]]);
+
+                Ok(())
+            }
+
+            _ => Err(anyhow!("unexpected number of objects")),
+        }?;
 
         Ok(())
     }

@@ -81,5 +81,13 @@ pub async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
     db.query("DEFINE FIELD spent ON transaction_outputs TYPE bool;")
         .await?;
 
+    db.query("DEFINE TABLE objects SCHEMAFULL;").await?;
+    db.query("DEFINE FIELD object_id ON objects TYPE string;")
+        .await?;
+    db.query("DEFINE FIELD cert_ttl ON objects TYPE int;")
+        .await?;
+    db.query("DEFINE FIELD claims ON objects FLEXIBLE TYPE array;")
+        .await?;
+
     Ok(())
 }

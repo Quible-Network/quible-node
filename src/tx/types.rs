@@ -39,11 +39,8 @@ pub enum TransactionOpCode {
     // unspendable script opcodes
     Insert { data: Vec<u8> },
     Delete { data: Vec<u8> },
-    NewSet,
-    CommitSet, // TODO: think about how to use a psuedo-spendable UTXO
-               //       where you have to provide a valid signature script
-               //       before you can commit changes to the set
-               //       before you can commit changes to the set
+    DeleteAll,
+    SetCertTTL { data: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
