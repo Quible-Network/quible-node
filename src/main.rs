@@ -422,7 +422,35 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
         object_id: [u8; 32],
         claim: Vec<u8>,
     ) -> Result<SignedCertificate, ErrorObjectOwned> {
-        // let result = self.db.query("SELECT object_id FROM objects WHERE object_id = $id AND claims CONTAINS $value")
+        let object_id_hex = hex::encode(object_id);
+        let surreal_object_id = SurrealID(Thing::from((
+            "objects".to_string(),
+            object_id_hex.to_string(),
+        )));
+
+        let result = self
+            .db
+            .query("SELECT object_id FROM objects WHERE id = $id AND claims CONTAINS $value")
+            .bind(("id", surreal_object_id))
+            .bind(("value", surrealdb::sql::Bytes::from(claim.clone())))
+            .await;
+
+        let validity: Option<String> = result
+            .and_then(|mut response| response.take((0, "object_id")))
+            .map_err(|err| {
+                ErrorObjectOwned::owned(
+                    CALL_EXECUTION_FAILED_CODE,
+                    "call execution failed: database query error",
+                    Some(err.to_string()),
+                )
+            })?;
+
+        validity.ok_or(ErrorObjectOwned::owned(
+            CALL_EXECUTION_FAILED_CODE,
+            "call execution failed: could not find identity or claim",
+            None as Option<String>,
+        ))?;
+
         let details = CertificateSigningRequestDetails {
             object_id,
             claim,
@@ -440,7 +468,8 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
         let signature_raw = sign_message(
             B256::from_slice(&self.node_signer_key),
             FixedBytes::new(hash),
-        ).map_err(|err| {
+        )
+        .map_err(|err| {
             ErrorObjectOwned::owned::<String>(
                 CALL_EXECUTION_FAILED_CODE,
                 "call execution failed: failed to sign",
@@ -1049,5 +1078,65 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn refuses_issuance_when_claim_is_missing() -> anyhow::Result<()> {
+        // Initialize SurrealDB
+        let db = any::connect("memory").await?;
+        db.use_ns("quible").use_db("quible_node").await?;
+        db::schema::initialize_db(&db).await?;
+
+        let db_arc = Arc::new(db);
+
+        let server_signer_key = k256::ecdsa::SigningKey::from_slice(&hex_literal::hex!(
+            "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+        ))?;
+
+        let server_addr = run_derive_server(
+            server_signer_key.to_bytes().as_slice().try_into()?,
+            &db_arc,
+            0,
+        )
+        .await?;
+        let url = format!("http://{}", server_addr);
+        println!("server listening at {}", url);
+        let client = HttpClient::builder().build(url)?;
+        // let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+        let object_id_raw = compute_object_id(vec![], 0)?;
+        let sample_transaction = Transaction::Version1 {
+            inputs: vec![],
+            outputs: vec![TransactionOutput::Object {
+                object_id: ObjectIdentifier {
+                    raw: object_id_raw,
+                    mode: ObjectMode::Fresh,
+                },
+                data_script: vec![TransactionOpCode::Insert {
+                    data: vec![1, 2, 3],
+                }],
+                pubkey_script: vec![],
+            }],
+            locktime: 0,
+        };
+
+        client.send_transaction(sample_transaction.clone()).await?;
+
+        propose_block(1, &db_arc).await?;
+
+        let failure_response = client
+            .request_certificate(object_id_raw, vec![4, 5, 6])
+            .await;
+
+        match failure_response {
+            Err(jsonrpsee::core::client::error::Error::Call(err)) => {
+                assert_eq!(
+                    err.message(),
+                    "call execution failed: could not find identity or claim"
+                );
+                Ok(())
+            }
+
+            _ => Err(anyhow!("expected response to be Err(Call(_))")),
+        }
     }
 }
