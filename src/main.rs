@@ -210,8 +210,11 @@ async fn propose_block(
 
     let coinbase_transaction = Transaction::Version1 {
         inputs: vec![],
-        outputs: vec![TransactionOutput::Value { value: 5, pubkey_script: vec![] }],
-        locktime: 0
+        outputs: vec![TransactionOutput::Value {
+            value: 5,
+            pubkey_script: vec![],
+        }],
+        locktime: 0,
     };
 
     transactions.insert(0, (coinbase_transaction.hash()?, coinbase_transaction));
@@ -673,12 +676,15 @@ mod tests {
 
             match row.transactions[..] {
                 [(coinbase_transaction_hash, _), (first_transaction_hash, _)] => {
-                    assert_ne!(coinbase_transaction_hash, sample_invalid_transaction.hash()?);
+                    assert_ne!(
+                        coinbase_transaction_hash,
+                        sample_invalid_transaction.hash()?
+                    );
                     assert_eq!(first_transaction_hash, sample_transaction.hash()?);
                     Ok(())
                 }
 
-                _ => Err(anyhow!("unexpected number of transactions"))
+                _ => Err(anyhow!("unexpected number of transactions")),
             }?;
         }
 
@@ -703,29 +709,28 @@ mod tests {
             hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
             &db_arc,
             0,
-        ).await?;
+        )
+        .await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
 
         let block_row = propose_block(1, &db_arc).await?;
 
         let coinbase_transaction_hash = match &block_row.transactions[..] {
-            [(hash, _), ] => Ok(*hash),
-            _ => Err(anyhow!("missing coinbase transaction"))
+            [(hash, _)] => Ok(*hash),
+            _ => Err(anyhow!("missing coinbase transaction")),
         }?;
 
         let client = HttpClient::builder().build(url)?;
         // let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
         let sample_first_transaction = Transaction::Version1 {
-            inputs: vec![
-                TransactionInput {
-                    outpoint: TransactionOutpoint {
-                        txid: coinbase_transaction_hash,
-                        index: 0
-                    },
-                    signature_script: vec![]
-                }
-            ],
+            inputs: vec![TransactionInput {
+                outpoint: TransactionOutpoint {
+                    txid: coinbase_transaction_hash,
+                    index: 0,
+                },
+                signature_script: vec![],
+            }],
             outputs: vec![TransactionOutput::Value {
                 value: 0,
                 pubkey_script: vec![],
@@ -741,25 +746,25 @@ mod tests {
         propose_block(2, &db_arc).await?;
 
         // Query pending transactions from SurrealDB
-        let mut result = db_arc.query("SELECT * FROM blocks ORDER BY height ASC").await?;
+        let mut result = db_arc
+            .query("SELECT * FROM blocks ORDER BY height ASC")
+            .await?;
         let block_rows: Vec<BlockRow> = result.take(0)?;
 
         match &block_rows[..] {
-            [_, second_block_row] => {
-                match second_block_row.transactions[..] {
-                    [_, (transaction_hash, _)] => {
-                        assert_eq!(transaction_hash, sample_first_transaction.hash()?);
-                        Ok(())
-                    }
-
-                    _ => {
-                        dbg!(second_block_row);
-                        Err(anyhow!("unexpected number of transactions"))
-                    }
+            [_, second_block_row] => match second_block_row.transactions[..] {
+                [_, (transaction_hash, _)] => {
+                    assert_eq!(transaction_hash, sample_first_transaction.hash()?);
+                    Ok(())
                 }
-            }
 
-            _ => Err(anyhow!("unexpected number of block rows"))
+                _ => {
+                    dbg!(second_block_row);
+                    Err(anyhow!("unexpected number of transactions"))
+                }
+            },
+
+            _ => Err(anyhow!("unexpected number of block rows")),
         }?;
 
         let pending_transaction_rows: Vec<PendingTransactionRow> =
