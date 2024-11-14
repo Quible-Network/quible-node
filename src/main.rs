@@ -264,7 +264,7 @@ async fn propose_block(block_number: u64, db_arc: &Arc<Surreal<AnyDb>>) {
 }
 pub struct QuibleRpcServerImpl {
     db: Arc<Surreal<AnyDb>>,
-    node_signer_key: [u8; 32],
+    // node_signer_key: [u8; 32],
 }
 
 #[jsonrpsee_async_trait]
@@ -328,7 +328,7 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
 }
 
 async fn run_derive_server(
-    node_signer_key: [u8; 32],
+    _node_signer_key: [u8; 32],
     db: &Arc<Surreal<AnyDb>>,
     port: u16,
 ) -> anyhow::Result<SocketAddr> {
@@ -349,7 +349,7 @@ async fn run_derive_server(
     let handle = server.start(
         QuibleRpcServerImpl {
             db: db.clone(),
-            node_signer_key,
+            // node_signer_key,
         }
         .into_rpc(),
     );
