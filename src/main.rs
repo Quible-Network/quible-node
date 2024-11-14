@@ -256,18 +256,18 @@ async fn propose_block(
                     spent: false,
                 })
                 .await?;
+        }
 
-            db_arc
-                .query("DELETE FROM pending_transactions WHERE id = $id")
-                .bind((
+        db_arc
+            .query("DELETE FROM pending_transactions WHERE id = $id")
+            .bind((
                     "id",
                     SurrealID(Thing::from((
-                        "pending_transactions".to_string(),
-                        transaction_hash_hex.clone().to_string(),
+                                "pending_transactions".to_string(),
+                                transaction_hash_hex.clone().to_string(),
                     ))),
-                ))
-                .await?;
-        }
+            ))
+            .await?;
     }
 
     Ok(block_row)
