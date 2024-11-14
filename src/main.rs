@@ -1,5 +1,6 @@
 use anyhow::anyhow;
 use async_trait::async_trait;
+use cert::types::{CertificateSigningRequestDetails, QuibleSignature, SignedCertificate};
 use db::types::{
     BlockRow, ObjectRow, PendingTransactionRow, SurrealID, TrackerPing, TransactionOutputRow,
 };
@@ -35,6 +36,7 @@ use types::HealthCheckResponse;
 
 use rpc::QuibleRpcServer;
 
+pub mod cert;
 pub mod db;
 pub mod quible_ecdsa_utils;
 pub mod quible_transaction_utils;
@@ -410,6 +412,22 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
     async fn check_health(&self) -> Result<types::HealthCheckResponse, ErrorObjectOwned> {
         Ok(HealthCheckResponse {
             status: "healthy".to_string(),
+        })
+    }
+
+    async fn request_certificate(
+        &self,
+        object_id: [u8; 32],
+        claim: Vec<u8>,
+    ) -> Result<SignedCertificate, ErrorObjectOwned> {
+        Ok(SignedCertificate {
+            details: CertificateSigningRequestDetails {
+                object_id,
+                claim,
+                expires_at: std::u64::MAX,
+            },
+
+            signature: QuibleSignature { raw: [0u8; 65] },
         })
     }
 }

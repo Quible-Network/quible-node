@@ -4,6 +4,7 @@ use jsonrpsee::proc_macros::rpc;
 // use jsonrpsee::rpc_params;
 use jsonrpsee::types::ErrorObjectOwned;
 
+use crate::cert;
 use crate::tx::types::Transaction;
 use crate::types;
 
@@ -16,5 +17,12 @@ pub trait QuibleRpc {
     #[method(name = "checkHealth")]
     async fn check_health(&self) -> Result<types::HealthCheckResponse, ErrorObjectOwned>;
 
-    // TODO: https://linear.app/quible/issue/QUI-98/utxo-certificate-issuance
+    #[method(name = "requestCertificate")]
+    async fn request_certificate(
+        &self,
+        object_id: [u8; 32],
+        claim: Vec<u8>,
+        // requested_at_block_height: u64
+        // TODO: https://linear.app/quible/issue/QUI-106/generate-expiration-dates-corresponding-to-request-block-numbers
+    ) -> Result<cert::types::SignedCertificate, ErrorObjectOwned>;
 }
