@@ -261,11 +261,11 @@ async fn propose_block(
         db_arc
             .query("DELETE FROM pending_transactions WHERE id = $id")
             .bind((
-                    "id",
-                    SurrealID(Thing::from((
-                                "pending_transactions".to_string(),
-                                transaction_hash_hex.clone().to_string(),
-                    ))),
+                "id",
+                SurrealID(Thing::from((
+                    "pending_transactions".to_string(),
+                    transaction_hash_hex.clone().to_string(),
+                ))),
             ))
             .await?;
     }
