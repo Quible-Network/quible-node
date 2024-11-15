@@ -58,7 +58,9 @@ impl<'de> Deserialize<'de> for QuibleSignature {
             .collect::<Result<Vec<u8>, std::num::ParseIntError>>()
             .map_err(|e| serde::de::Error::custom(e))?;
 
-        let byte_array: [u8; 65] = byte_vec.try_into().unwrap();
+        let byte_array: [u8; 65] = byte_vec
+            .try_into()
+            .map_err(|e| serde::de::Error::custom(format!("{:#?}", e)))?;
 
         Ok(QuibleSignature { raw: byte_array })
     }
