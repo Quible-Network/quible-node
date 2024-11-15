@@ -42,14 +42,14 @@ pub trait ExecutionContext {
 
 pub fn compute_object_id(
     inputs: Vec<TransactionInput>,
-    output_index: u32,
+    output_index: u64,
 ) -> anyhow::Result<[u8; 32]> {
     let mut hasher = Keccak256::new();
     for input in inputs {
         hasher.update(input.outpoint.txid);
-        hasher.update(bytemuck::cast::<u32, [u8; 4]>(input.outpoint.index));
+        hasher.update(bytemuck::cast::<u64, [u8; 8]>(input.outpoint.index));
     }
-    hasher.update(bytemuck::cast::<u32, [u8; 4]>(output_index));
+    hasher.update(bytemuck::cast::<u64, [u8; 8]>(output_index));
 
     hasher
         .finalize()

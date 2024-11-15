@@ -1,12 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-// TODO: verify that the Keccak256 hashes are only 32 bytes.
-//       they might have more bytes.
-pub type TransactionHash = [u8; 32];
-
-#[allow(dead_code)]
-pub type BlockHash = [u8; 32];
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurrealID(pub surrealdb::sql::Thing);
 
@@ -14,17 +7,10 @@ pub struct SurrealID(pub surrealdb::sql::Thing);
 pub struct PendingTransactionRow {
     pub id: SurrealID,
     pub hash: String,
-    // pub hash: surrealdb::sql::Bytes,
-    // pub hash: TransactionHash,
-    pub data: Transaction,
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BlockRow {
-    pub hash: String,
-    pub block_number: u64,
-    pub timestamp: u64,
-    pub transactions: Vec<serde_json::Value>,
+    // https://linear.app/quible/issue/QUI-99/use-surrealdb-bytes-type-for-storing-hashes
+    // pub hash: surrealdb::sql::Bytes,
+    pub data: Transaction,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
