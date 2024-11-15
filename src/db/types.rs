@@ -37,3 +37,11 @@ pub struct TransactionOutputRow {
     pub output: TransactionOutput,
     pub spent: bool,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectRow {
+    pub id: SurrealID,
+    pub object_id: String,
+    pub cert_ttl: u64,
+    pub claims: Vec<Vec<u8>>,
+}
