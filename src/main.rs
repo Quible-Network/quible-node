@@ -454,6 +454,8 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
         let details = CertificateSigningRequestDetails {
             object_id,
             claim,
+
+            // TODO: https://linear.app/quible/issue/QUI-107/generate-expiration-dates
             expires_at: std::u64::MAX,
         };
 
