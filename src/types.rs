@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use crate::tx::types::{TransactionOutpoint, TransactionOutput};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurrealID(pub surrealdb::sql::Thing);
 
@@ -216,4 +218,16 @@ impl<'de> Deserialize<'de> for ECDSASignature {
 
         Ok(ECDSASignature { bytes })
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValueOutputEntry {
+    pub outpoint: TransactionOutpoint,
+    pub value: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValueOutputsPayload {
+    pub total_value: u64,
+    pub outputs: Vec<ValueOutputEntry>,
 }

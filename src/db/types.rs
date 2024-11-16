@@ -35,6 +35,7 @@ pub struct TransactionOutputRow {
     pub transaction_hash: String,
     pub output_index: u64,
     pub output: TransactionOutput,
+    pub owner: String,
     pub spent: bool,
 }
 

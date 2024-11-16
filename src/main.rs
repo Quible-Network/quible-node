@@ -34,7 +34,7 @@ use tx::types::{
     BlockHeader, Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionOpCode,
     TransactionOutpoint, TransactionOutput,
 };
-use types::HealthCheckResponse;
+use types::{HealthCheckResponse, ValueOutputEntry, ValueOutputsPayload};
 
 use rpc::QuibleRpcServer;
 
@@ -311,6 +311,20 @@ async fn propose_block(
         let transaction_hash_hex = hex::encode(transaction_hash);
 
         for (index, output) in outputs.iter().enumerate() {
+            let pubkey_script = match output {
+                TransactionOutput::Object { pubkey_script, .. } => pubkey_script,
+                TransactionOutput::Value { pubkey_script, .. } => pubkey_script,
+            };
+
+            let owner = match &pubkey_script[..] {
+                [TransactionOpCode::Dup, TransactionOpCode::Push { data: address_vec }, TransactionOpCode::EqualVerify, TransactionOpCode::CheckSigVerify] => {
+                    hex::encode(address_vec.as_slice())
+                }
+                _ => "".to_string(),
+            };
+
+            dbg!("WHATWHATWHAT");
+
             db_arc
                 .create::<Vec<TransactionOutputRow>>("transaction_outputs")
                 .content(TransactionOutputRow {
@@ -321,6 +335,7 @@ async fn propose_block(
                     transaction_hash: transaction_hash_hex.clone(),
                     output_index: index.try_into()?,
                     output: output.clone(),
+                    owner,
                     spent: false,
                 })
                 .await?;
@@ -482,6 +497,73 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
         Ok(SignedCertificate {
             details,
             signature: QuibleSignature { raw: signature_raw },
+        })
+    }
+
+    async fn fetch_unspent_value_outputs_by_owner(
+        &self,
+        owner_address: [u8; 20],
+    ) -> Result<ValueOutputsPayload, ErrorObjectOwned> {
+        let owner_address_hex = hex::encode(owner_address);
+        let result = self.db
+            .query("SELECT * FROM transaction_outputs WHERE owner = $owner AND spent = false AND output.type = \"Value\"")
+            .bind(("owner", owner_address_hex))
+            .await;
+
+        let output_rows: Vec<TransactionOutputRow> = result
+            .and_then(|mut response| response.take(0))
+            .map_err(|err| {
+                ErrorObjectOwned::owned(
+                    CALL_EXECUTION_FAILED_CODE,
+                    "call execution failed: could not find identity or claim",
+                    Some(err.to_string()),
+                )
+            })?;
+
+        dbg!(output_rows.len());
+
+        let mut total_value = 0u64;
+
+        let mut output_entries: Vec<ValueOutputEntry> = vec![];
+
+        for output_row in output_rows {
+            let transaction_hash_vec: Vec<u8> =
+                hex::decode(output_row.transaction_hash).map_err(|err| {
+                    ErrorObjectOwned::owned(
+                        CALL_EXECUTION_FAILED_CODE,
+                        "call execution failed: failed to decode transaction hash",
+                        Some(err.to_string()),
+                    )
+                })?;
+
+            let transaction_hash: [u8; 32] = transaction_hash_vec.try_into().map_err(|_| {
+                ErrorObjectOwned::owned(
+                    CALL_EXECUTION_FAILED_CODE,
+                    "call execution failed: transaction hash is not 32 bytes",
+                    None as Option<String>,
+                )
+            })?;
+
+            match output_row.output {
+                TransactionOutput::Value { value, .. } => {
+                    total_value += value;
+
+                    output_entries.push(ValueOutputEntry {
+                        outpoint: TransactionOutpoint {
+                            txid: transaction_hash,
+                            index: output_row.output_index,
+                        },
+                        value,
+                    })
+                }
+
+                _ => {}
+            }
+        }
+
+        Ok(ValueOutputsPayload {
+            total_value,
+            outputs: output_entries,
         })
     }
 }
@@ -1140,5 +1222,85 @@ mod tests {
 
             _ => Err(anyhow!("expected response to be Err(Call(_))")),
         }
+    }
+
+    #[tokio::test]
+    async fn fetches_unspent_value_outputs() -> anyhow::Result<()> {
+        // Initialize SurrealDB
+        let db = any::connect("memory").await?;
+        db.use_ns("quible").use_db("quible_node").await?;
+        db::schema::initialize_db(&db).await?;
+
+        let db_arc = Arc::new(db);
+
+        let server_signer_key = k256::ecdsa::SigningKey::from_slice(&hex_literal::hex!(
+            "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+        ))?;
+
+        let server_addr = run_derive_server(
+            server_signer_key.to_bytes().as_slice().try_into()?,
+            &db_arc,
+            0,
+        )
+        .await?;
+        let url = format!("http://{}", server_addr);
+        println!("server listening at {}", url);
+        let client = HttpClient::builder().build(url)?;
+
+        let block_row = propose_block(1, &db_arc).await?;
+
+        let coinbase_transaction_hash = match &block_row.transactions[..] {
+            [(hash, _)] => Ok(*hash),
+            _ => Err(anyhow!("missing coinbase transaction")),
+        }?;
+
+        let owner_address = Address::from_private_key(&server_signer_key);
+
+        let sample_transaction = Transaction::Version1 {
+            inputs: vec![TransactionInput {
+                outpoint: TransactionOutpoint {
+                    txid: coinbase_transaction_hash,
+                    index: 0,
+                },
+                signature_script: vec![],
+            }],
+            outputs: vec![TransactionOutput::Value {
+                value: 5,
+                pubkey_script: vec![
+                    TransactionOpCode::Dup,
+                    TransactionOpCode::Push {
+                        data: owner_address.to_vec(),
+                    },
+                    TransactionOpCode::EqualVerify,
+                    TransactionOpCode::CheckSigVerify,
+                ],
+            }],
+            locktime: 0,
+        };
+
+        client.send_transaction(sample_transaction.clone()).await?;
+
+        propose_block(2, &db_arc).await?;
+
+        let payload = client
+            .fetch_unspent_value_outputs_by_owner(owner_address.into_array())
+            .await?;
+
+        assert_eq!(payload.total_value, 5);
+
+        match &payload.outputs[..] {
+            [output_row] => {
+                assert_eq!(output_row.outpoint.txid, sample_transaction.clone().hash()?);
+
+                Ok(())
+            }
+
+            _ => {
+                dbg!(payload.clone().outputs);
+                Err(anyhow!("unexpected number of outputs"))
+            }
+        }?;
+
+        Ok(())
     }
 }
