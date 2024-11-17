@@ -323,8 +323,6 @@ async fn propose_block(
                 _ => "".to_string(),
             };
 
-            dbg!("WHATWHATWHAT");
-
             db_arc
                 .create::<Vec<TransactionOutputRow>>("transaction_outputs")
                 .content(TransactionOutputRow {
