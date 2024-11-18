@@ -6,7 +6,7 @@ use jsonrpsee::types::ErrorObjectOwned;
 
 use crate::cert;
 use crate::tx::types::Transaction;
-use crate::types;
+use crate::types::{self, ValueOutputsPayload};
 
 #[rpc(server, client, namespace = "quible")]
 pub trait QuibleRpc {
@@ -25,4 +25,10 @@ pub trait QuibleRpc {
         // requested_at_block_height: u64
         // TODO: https://linear.app/quible/issue/QUI-106/generate-expiration-dates-corresponding-to-request-block-numbers
     ) -> Result<cert::types::SignedCertificate, ErrorObjectOwned>;
+
+    #[method(name = "fetchUnspentValueOutputsByOwner")]
+    async fn fetch_unspent_value_outputs_by_owner(
+        &self,
+        owner_address: [u8; 20],
+    ) -> Result<ValueOutputsPayload, ErrorObjectOwned>;
 }
