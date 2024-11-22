@@ -1,0 +1,3 @@
+cd sdk
+npx lint-staged
+npm test
