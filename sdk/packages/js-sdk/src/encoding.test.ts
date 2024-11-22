@@ -1,25 +1,6 @@
 import { encodeTransaction } from './encoding'
 import { TransactionContents } from './types'
-
-const hexStringToUint8Array = (hex: string): Uint8Array => {
-  if (hex.length % 2 !== 0) {
-    throw new Error('Hex string must have an even length')
-  }
-
-  if (hex.startsWith('0x')) {
-    hex = hex.slice(2)
-  }
-
-  const length = hex.length / 2
-  const result = new Uint8Array(length)
-
-  for (let i = 0; i < length; i++) {
-    const byte = hex.slice(i * 2, i * 2 + 2)
-    result[i] = parseInt(byte, 16)
-  }
-
-  return result
-}
+import { convertHexStringToUint8Array } from './utils'
 
 describe('encoder', () => {
   it('should encode successfully', () => {
@@ -27,7 +8,7 @@ describe('encoder', () => {
       inputs: [
         {
           outpoint: {
-            txid: hexStringToUint8Array(
+            txid: convertHexStringToUint8Array(
               '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
             ) as Uint8Array & { length: 32 },
             index: 0n,
@@ -46,7 +27,7 @@ describe('encoder', () => {
               { code: 'DUP' },
               {
                 code: 'PUSH',
-                data: hexStringToUint8Array(
+                data: convertHexStringToUint8Array(
                   '0x7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f7f',
                 ) as Uint8Array & { length: 32 },
               },

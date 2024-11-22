@@ -3,16 +3,13 @@ import {
   TransactionContents,
   TransactionOpCode,
 } from './types'
+import { convertUint8ArrayToHexString } from './utils'
 
 export class EncodedTransaction {
   constructor(public raw: Uint8Array) {}
 
   toHexString(): string {
-    const hexBytes = Array.from(this.raw)
-      .map((byte) => byte.toString(16).padStart(2, '0'))
-      .join('')
-
-    return `0x${hexBytes}`
+    return convertUint8ArrayToHexString(this.raw)
   }
 
   toBytes(): Uint8Array {
