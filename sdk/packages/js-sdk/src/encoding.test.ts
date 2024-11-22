@@ -1,52 +1,8 @@
-export {}
-
-type TransactionOpCode =
-  | { code: 'PUSH'; data: Uint8Array }
-  | { code: 'CHECKSIGVERIFY' }
-  | { code: 'DUP' }
-  | { code: 'EQUALVERIFY' }
-  | { code: 'INSERT'; data: Uint8Array }
-  | { code: 'DELETE'; data: Uint8Array }
-  | { code: 'DELETEALL' }
-  | { code: 'SETCERTTTL'; data: bigint }
-
-type TransactionOutpoint = {
-  txid: Uint8Array & { length: 32 }
-  index: bigint
-}
-
-type TransactionInput = {
-  outpoint: TransactionOutpoint
-  signatureScript: TransactionOpCode[]
-}
-
-type ObjectIdentifier = {
-  raw: Uint8Array & { length: 32 }
-  mode: { type: 'Fresh' } | { type: 'Existing'; permitIndex: bigint }
-}
-
-type TransactionOutput =
-  | {
-      type: 'Value'
-      data: {
-        value: bigint
-        pubkeyScript: TransactionOpCode[]
-      }
-    }
-  | {
-      type: 'Object'
-      data: {
-        objectId: ObjectIdentifier
-        dataScript: TransactionOpCode[]
-        pubkeyScript: TransactionOpCode[]
-      }
-    }
-
-type TransactionContents = {
-  inputs: TransactionInput[]
-  outputs: TransactionOutput[]
-  locktime: bigint
-}
+import {
+  ObjectIdentifier,
+  TransactionContents,
+  TransactionOpCode,
+} from './types'
 
 class EncodedTransaction {
   constructor(public raw: Uint8Array) {}
