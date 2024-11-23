@@ -27,3 +27,20 @@ export const convertHexStringToUint8Array = (hex: string): Uint8Array => {
 
   return result
 }
+
+export const convertHexStringToFixedLengthUint8Array = <N extends number>(
+  hex: string,
+  length: N,
+): Uint8Array & { length: N } => {
+  if (hex.startsWith('0x')) {
+    hex = hex.slice(2)
+  }
+
+  if (hex.length / 2 !== length) {
+    throw new Error(
+      `Hex string does not match the required length of ${length} bytes`,
+    )
+  }
+
+  return convertHexStringToUint8Array(hex) as Uint8Array & { length: N }
+}
