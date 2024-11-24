@@ -99,6 +99,8 @@ pub async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
         .await?;
     db.query("DEFINE FIELD owner_signing_key_hex ON intermediate_faucet_outputs TYPE string;")
         .await?;
+    db.query("DEFINE FIELD timestamp ON intermediate_faucet_outputs TYPE datetime;")
+        .await?;
 
     Ok(())
 }

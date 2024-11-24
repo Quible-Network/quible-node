@@ -3,7 +3,8 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use cert::types::{CertificateSigningRequestDetails, QuibleSignature, SignedCertificate};
 use db::types::{
-    BlockRow, ObjectRow, PendingTransactionRow, SurrealID, TrackerPing, TransactionOutputRow,
+    BlockRow, IntermediateFaucetOutputRow, ObjectRow, PendingTransactionRow, SurrealID,
+    TrackerPing, TransactionOutputRow,
 };
 use futures::prelude::stream::StreamExt;
 use hex;
@@ -110,7 +111,10 @@ impl ExecutionContext for QuibleBlockProposerExecutionContextImpl {
                 Ok(transaction_output_row.output)
             }
 
-            None => Err(anyhow!("transaction hash not found!")),
+            None => {
+                dbg!(outpoint);
+                Err(anyhow!("transaction hash not found!"))
+            }
         }
     }
 
@@ -279,7 +283,19 @@ async fn propose_block(
         .collect::<Result<Vec<([u8; 32], Transaction)>, anyhow::Error>>()?;
 
     let coinbase_transaction = Transaction::Version1 {
-        inputs: vec![],
+        inputs: vec![TransactionInput {
+            outpoint: TransactionOutpoint {
+                txid: [0u8; 32],
+                index: 0,
+            },
+            signature_script: vec![
+                // we use this so that the transaction hash is unique for each block
+                TransactionOpCode::Push {
+                    data: previous_block_header_hash.to_vec(),
+                },
+            ],
+        }],
+
         outputs: vec![TransactionOutput::Value {
             value: 5,
 
@@ -301,7 +317,7 @@ async fn propose_block(
 
     let block_row = BlockRow {
         id: SurrealID(Thing::from((
-            "pending_transactions".to_string(),
+            "blocks".to_string(),
             block_header_hash_hex.clone().to_string(),
         ))),
         hash: block_header_hash_hex,
@@ -539,8 +555,6 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
                 )
             })?;
 
-        dbg!(output_rows.len());
-
         let mut total_value = 0u64;
 
         let mut output_entries: Vec<ValueOutputEntry> = vec![];
@@ -587,23 +601,74 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
     }
 
     async fn request_faucet_output(&self) -> Result<FaucetOutputPayload, ErrorObjectOwned> {
-        // TODO: generate a new output, then return the second-most recent output from the database
-        let (outpoint, owner_signing_key) = generate_intermediate_faucet_output(&self).await?;
+        let result = self
+            .db
+            .query("SELECT * FROM intermediate_faucet_outputs ORDER BY timestamp DESC LIMIT 1")
+            .await;
 
-        let mut owner_signing_key_array = [0u8; 32];
-        owner_signing_key_array.copy_from_slice(&owner_signing_key.to_bytes()[..]);
+        let output_rows: Vec<IntermediateFaucetOutputRow> = result
+            .and_then(|mut response| response.take(0))
+            .map_err(|err| {
+                ErrorObjectOwned::owned(
+                    CALL_EXECUTION_FAILED_CODE,
+                    "call execution failed: database query error",
+                    Some(err.to_string()),
+                )
+            })?;
 
-        Ok(FaucetOutputPayload {
-            outpoint,
-            value: 0, // TODO
-            owner_signing_key: owner_signing_key_array,
-        })
+        match &output_rows[..] {
+            [IntermediateFaucetOutputRow {
+                transaction_hash_hex,
+                output_index,
+                owner_signing_key_hex,
+                ..
+            }, ..] => {
+                let mut transaction_hash = [0u8; 32];
+                hex::decode_to_slice(transaction_hash_hex, &mut transaction_hash).map_err(
+                    |err| {
+                        ErrorObjectOwned::owned(
+                            CALL_EXECUTION_FAILED_CODE,
+                            "call execution failed: failed to decode transaction hash hex",
+                            Some(err.to_string()),
+                        )
+                    },
+                )?;
+
+                let mut owner_signing_key_array = [0u8; 32];
+                hex::decode_to_slice(owner_signing_key_hex, &mut owner_signing_key_array).map_err(
+                    |err| {
+                        ErrorObjectOwned::owned(
+                            CALL_EXECUTION_FAILED_CODE,
+                            "call execution failed: failed to decode owner signing key hex",
+                            Some(err.to_string()),
+                        )
+                    },
+                )?;
+
+                generate_intermediate_faucet_output(&self).await?;
+
+                Ok(FaucetOutputPayload {
+                    outpoint: TransactionOutpoint {
+                        txid: transaction_hash,
+                        index: *output_index,
+                    },
+                    value: 0, // TODO
+                    owner_signing_key: owner_signing_key_array,
+                })
+            }
+
+            _ => Err(ErrorObjectOwned::owned(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to find existing intermediate faucet output",
+                None as Option<String>,
+            )),
+        }
     }
 }
 
 async fn generate_intermediate_faucet_output(
     server: &QuibleRpcServerImpl,
-) -> Result<(TransactionOutpoint, SigningKey), ErrorObjectOwned> {
+) -> Result<(), ErrorObjectOwned> {
     let temporary_owner_signing_key = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
     let temporary_owner_signing_key_hex = hex::encode(temporary_owner_signing_key.to_bytes());
     let temporary_owner_address = Address::from_private_key(&temporary_owner_signing_key);
@@ -745,10 +810,9 @@ async fn generate_intermediate_faucet_output(
         locktime: 0,
     };
 
-    let (
-        signed_intermediate_faucet_transaction_row_hash,
-        signed_intermediate_faucet_transaction_row,
-    ) = format_pending_transaction_row(signed_intermediate_faucet_transaction)?;
+    let (_, signed_intermediate_faucet_transaction_row) =
+        format_pending_transaction_row(signed_intermediate_faucet_transaction)?;
+
     let signed_intermediate_faucet_transaction_row_hash_hex =
         signed_intermediate_faucet_transaction_row.clone().hash;
 
@@ -761,7 +825,8 @@ async fn generate_intermediate_faucet_output(
                 CREATE $faucet_transaction_id SET
                   transaction_hash_hex = $transaction_hash_hex,
                   output_index = 0,
-                  owner_signing_key_hex = $owner_signing_key_hex;
+                  owner_signing_key_hex = $owner_signing_key_hex,
+                  timestamp = time::now();
                 RELATE $faucet_transaction_id->spending->$origin_transaction_output_id;
                 COMMIT;
             ",
@@ -805,15 +870,7 @@ async fn generate_intermediate_faucet_output(
             )
         })?;
 
-    // TODO: return transaction outpoint
-
-    Ok((
-        TransactionOutpoint {
-            txid: signed_intermediate_faucet_transaction_row_hash,
-            index: 0,
-        },
-        temporary_owner_signing_key,
-    ))
+    Ok(())
 }
 
 async fn run_derive_server(
@@ -997,7 +1054,6 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use super::{db, run_derive_server};
     use crate::db::types::{BlockRow, ObjectRow, PendingTransactionRow};
-    use crate::propose_block;
     use crate::quible_ecdsa_utils::{recover_signer_unchecked, sign_message};
     use crate::rpc::QuibleRpcClient;
     use crate::tx::engine::compute_object_id;
@@ -1005,6 +1061,7 @@ mod tests {
         Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionInput, TransactionOpCode,
         TransactionOutpoint, TransactionOutput,
     };
+    use crate::{generate_intermediate_faucet_output, propose_block, QuibleRpcServerImpl};
     use alloy_primitives::{Address, B256};
     use anyhow::anyhow;
     use jsonrpsee::http_client::HttpClient;
@@ -1599,7 +1656,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn generates_spendable_faucet_outputs() -> anyhow::Result<()> {
+    async fn fails_to_find_faucet_outputs_when_none_are_generated() -> anyhow::Result<()> {
         // Initialize SurrealDB
         let db = any::connect("memory").await?;
         db.use_ns("quible").use_db("quible_node").await?;
@@ -1610,8 +1667,6 @@ mod tests {
         let server_signer_key = k256::ecdsa::SigningKey::from_slice(&hex_literal::hex!(
             "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
         ))?;
-        let faucet_user_signing_key = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
-        let faucet_user_address = Address::from_private_key(&faucet_user_signing_key);
 
         let server_addr = run_derive_server(
             server_signer_key.to_bytes().as_slice().try_into()?,
@@ -1625,11 +1680,56 @@ mod tests {
 
         let _ = propose_block(1, &db_arc, &server_signer_key).await?;
 
-        let faucet_payload = client.request_faucet_output().await?;
+        let result = client.request_faucet_output().await;
+
+        match result {
+            Err(jsonrpsee::core::client::error::Error::Call(err)) => {
+                assert_eq!(
+                    err.message(),
+                    "call execution failed: failed to find existing intermediate faucet output",
+                );
+                Ok(())
+            }
+
+            _ => Err(anyhow!("expected response to be Err(Call(_))")),
+        }
+    }
+
+    #[tokio::test]
+    async fn generates_spendable_faucet_outputs() -> anyhow::Result<()> {
+        // Initialize SurrealDB
+        let db = any::connect("memory").await?;
+        db.use_ns("quible").use_db("quible_node").await?;
+        db::schema::initialize_db(&db).await?;
+
+        let db_arc = Arc::new(db);
+
+        let server_signer_key_bytes =
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
+
+        let server_signer_key = k256::ecdsa::SigningKey::from_slice(&server_signer_key_bytes)?;
+
+        let faucet_user_signing_key = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+        let faucet_user_address = Address::from_private_key(&faucet_user_signing_key);
+
+        let server_addr = run_derive_server(server_signer_key_bytes, &db_arc, 0).await?;
+        let url = format!("http://{}", server_addr);
+        println!("server listening at {}", url);
+        let client = HttpClient::builder().build(url)?;
+
+        let _ = propose_block(1, &db_arc, &server_signer_key).await?;
+
+        generate_intermediate_faucet_output(&QuibleRpcServerImpl {
+            db: db_arc.clone(),
+            node_signer_key: server_signer_key_bytes,
+        })
+        .await?;
 
         // extra block proposal ensures that the
         // intermediate transaction is executed
-        propose_block(2, &db_arc, &server_signer_key).await?;
+        let _ = propose_block(2, &db_arc, &server_signer_key).await?;
+
+        let faucet_payload = client.request_faucet_output().await?;
 
         let faucet_owner_signing_key_bytes = faucet_payload.owner_signing_key;
         let faucet_owner_address =
