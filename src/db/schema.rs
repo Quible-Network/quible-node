@@ -91,5 +91,14 @@ pub async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
     db.query("DEFINE FIELD claims ON objects FLEXIBLE TYPE array;")
         .await?;
 
+    db.query("DEFINE TABLE intermediate_faucet_outputs SCHEMAFULL;")
+        .await?;
+    db.query("DEFINE FIELD transaction_hash_hex ON intermediate_faucet_outputs TYPE string;")
+        .await?;
+    db.query("DEFINE FIELD output_index ON intermediate_faucet_outputs TYPE int;")
+        .await?;
+    db.query("DEFINE FIELD owner_signing_key_hex ON intermediate_faucet_outputs TYPE string;")
+        .await?;
+
     Ok(())
 }

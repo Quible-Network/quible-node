@@ -6,7 +6,7 @@ use jsonrpsee::types::ErrorObjectOwned;
 
 use crate::cert;
 use crate::tx::types::Transaction;
-use crate::types::{self, ValueOutputsPayload};
+use crate::types::{self, FaucetOutputPayload, ValueOutputsPayload};
 
 #[rpc(server, client, namespace = "quible")]
 pub trait QuibleRpc {
@@ -31,4 +31,7 @@ pub trait QuibleRpc {
         &self,
         owner_address: [u8; 20],
     ) -> Result<ValueOutputsPayload, ErrorObjectOwned>;
+
+    #[method(name = "requestFaucetOutput")]
+    async fn request_faucet_output(&self) -> Result<FaucetOutputPayload, ErrorObjectOwned>;
 }
