@@ -238,7 +238,7 @@ async fn propose_block(
         mempool: pending_transaction_rows
             .iter()
             .map(|tx| {
-                Ok((tx.clone().data.hash()?, tx.clone().data))
+                Ok((tx.clone().data.hash_eip191()?, tx.clone().data))
                     as Result<([u8; 32], Transaction), anyhow::Error>
             })
             .collect::<Result<Vec<([u8; 32], Transaction)>, anyhow::Error>>()?,
@@ -307,13 +307,16 @@ async fn propose_block(
                         .to_vec(),
                 },
                 TransactionOpCode::EqualVerify,
-                TransactionOpCode::CheckSigVerify,
+                TransactionOpCode::CheckEip191SigVerify,
             ],
         }],
         locktime: 0,
     };
 
-    transactions.insert(0, (coinbase_transaction.hash()?, coinbase_transaction));
+    transactions.insert(
+        0,
+        (coinbase_transaction.hash_eip191()?, coinbase_transaction),
+    );
 
     let block_row = BlockRow {
         id: SurrealID(Thing::from((
@@ -343,7 +346,7 @@ async fn propose_block(
             };
 
             let owner = match &pubkey_script[..] {
-                [TransactionOpCode::Dup, TransactionOpCode::Push { data: address_vec }, TransactionOpCode::EqualVerify, TransactionOpCode::CheckSigVerify] => {
+                [TransactionOpCode::Dup, TransactionOpCode::Push { data: address_vec }, TransactionOpCode::EqualVerify, TransactionOpCode::CheckEip191SigVerify] => {
                     hex::encode(address_vec.as_slice())
                 }
                 _ => "".to_string(),
@@ -400,7 +403,7 @@ pub struct QuibleRpcServerImpl {
 fn format_pending_transaction_row(
     transaction: Transaction,
 ) -> Result<([u8; 32], PendingTransactionRow), ErrorObjectOwned> {
-    let transaction_hash = transaction.hash().map_err(|err| {
+    let transaction_hash = transaction.hash_eip191().map_err(|err| {
         ErrorObjectOwned::owned::<String>(
             CALL_EXECUTION_FAILED_CODE,
             "call execution failed: failed to compute transaction hash",
@@ -758,7 +761,7 @@ async fn generate_intermediate_faucet_output(
                 data: temporary_owner_address.into_array().to_vec(),
             },
             TransactionOpCode::EqualVerify,
-            TransactionOpCode::CheckSigVerify,
+            TransactionOpCode::CheckEip191SigVerify,
         ],
     }];
 
@@ -769,7 +772,7 @@ async fn generate_intermediate_faucet_output(
     };
 
     let unsigned_intermediate_faucet_transaction_hash = unsigned_intermediate_faucet_transaction
-        .hash()
+        .hash_eip191()
         .map_err(|err| {
             ErrorObjectOwned::owned(
                 CALL_EXECUTION_FAILED_CODE,
@@ -1219,9 +1222,9 @@ mod tests {
                 [(coinbase_transaction_hash, _), (first_transaction_hash, _)] => {
                     assert_ne!(
                         coinbase_transaction_hash,
-                        sample_invalid_transaction.hash()?
+                        sample_invalid_transaction.hash_eip191()?
                     );
-                    assert_eq!(first_transaction_hash, sample_transaction.hash()?);
+                    assert_eq!(first_transaction_hash, sample_transaction.hash_eip191()?);
                     Ok(())
                 }
 
@@ -1280,7 +1283,7 @@ mod tests {
 
         let signature = sign_message(
             B256::from_slice(&node_signing_key_bytes),
-            sample_first_transaction.hash()?.into(),
+            sample_first_transaction.hash_eip191()?.into(),
         )?
         .to_vec();
 
@@ -1320,7 +1323,7 @@ mod tests {
         match &block_rows[..] {
             [_, second_block_row] => match second_block_row.transactions[..] {
                 [_, (transaction_hash, _)] => {
-                    assert_eq!(transaction_hash, sample_first_transaction.hash()?);
+                    assert_eq!(transaction_hash, sample_first_transaction.hash_eip191()?);
                     Ok(())
                 }
 
@@ -1407,7 +1410,7 @@ mod tests {
 
             match row.transactions[..] {
                 [_, (first_transaction_hash, _)] => {
-                    assert_eq!(first_transaction_hash, sample_transaction.hash()?);
+                    assert_eq!(first_transaction_hash, sample_transaction.hash_eip191()?);
                     Ok(())
                 }
 
@@ -1599,7 +1602,7 @@ mod tests {
                         data: user_address.to_vec(),
                     },
                     TransactionOpCode::EqualVerify,
-                    TransactionOpCode::CheckSigVerify,
+                    TransactionOpCode::CheckEip191SigVerify,
                 ],
             }],
             locktime: 0,
@@ -1607,7 +1610,7 @@ mod tests {
 
         let signature = sign_message(
             B256::from_slice(&server_signing_key_bytes),
-            sample_transaction.hash()?.into(),
+            sample_transaction.hash_eip191()?.into(),
         )?
         .to_vec();
 
@@ -1641,7 +1644,10 @@ mod tests {
 
         match &payload.outputs[..] {
             [output_row] => {
-                assert_eq!(output_row.outpoint.txid, sample_transaction.clone().hash()?);
+                assert_eq!(
+                    output_row.outpoint.txid,
+                    sample_transaction.clone().hash_eip191()?
+                );
 
                 Ok(())
             }
@@ -1748,7 +1754,7 @@ mod tests {
                         data: faucet_user_address.into_array().to_vec(),
                     },
                     TransactionOpCode::EqualVerify,
-                    TransactionOpCode::CheckSigVerify,
+                    TransactionOpCode::CheckEip191SigVerify,
                 ],
             }],
             locktime: 0,
@@ -1756,7 +1762,7 @@ mod tests {
 
         let signature = sign_message(
             B256::from_slice(&faucet_owner_signing_key_bytes),
-            sample_transaction.hash()?.into(),
+            sample_transaction.hash_eip191()?.into(),
         )?
         .to_vec();
 
@@ -1790,7 +1796,10 @@ mod tests {
 
         match &payload.outputs[..] {
             [output_row] => {
-                assert_eq!(output_row.outpoint.txid, sample_transaction.clone().hash()?);
+                assert_eq!(
+                    output_row.outpoint.txid,
+                    sample_transaction.clone().hash_eip191()?
+                );
 
                 Ok(())
             }
