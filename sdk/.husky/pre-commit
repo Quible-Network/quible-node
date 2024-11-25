@@ -1,3 +1,33 @@
-cd sdk
-npx lint-staged
-npm test
+#!/usr/bin/env bash
+
+set +e
+
+STAGED_FILES=$(git diff --cached --name-only)
+
+CHANGED_RUST_FILES=$(echo "$STAGED_FILES" | grep "^src/")
+CHANGED_SDK_FILES=$(echo "$STAGED_FILES" | grep "^sdk/")
+
+set -e
+
+if [[ -n "$CHANGED_RUST_FILES" ]]; then
+    set +e
+    diff=$(cargo fmt -- --check)
+    result=$?
+    set -e
+
+    if [[ ${result} -ne 0 ]] ; then
+        cat <<\EOF
+There are some code style issues, run `cargo fmt` first.
+EOF
+        exit 1
+    fi
+fi
+
+if [[ -n "$CHANGED_SDK_FILES" ]]; then
+    cd sdk
+    npx lint-staged
+    npm test
+
+fi
+
+exit 0
