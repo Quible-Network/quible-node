@@ -1,4 +1,4 @@
-use alloy_primitives::{FixedBytes, B256};
+use alloy_primitives::{Address, FixedBytes, B256};
 use anyhow::anyhow;
 use async_trait::async_trait;
 use cert::types::{CertificateSigningRequestDetails, QuibleSignature, SignedCertificate};
@@ -11,6 +11,7 @@ use hyper::Method;
 use jsonrpsee::core::async_trait as jsonrpsee_async_trait;
 use jsonrpsee::types::error::CALL_EXECUTION_FAILED_CODE;
 use jsonrpsee::{server::Server, types::ErrorObjectOwned};
+use k256::ecdsa::SigningKey;
 use libp2p::{multiaddr, noise, ping, swarm::SwarmEvent, tcp, yamux};
 use quible_ecdsa_utils::sign_message;
 use serde::{Deserialize, Serialize};
@@ -215,6 +216,7 @@ async fn digest_object_output(
 async fn propose_block(
     block_number: u64,
     db_arc: &Arc<Surreal<AnyDb>>,
+    node_signing_key: &SigningKey,
 ) -> anyhow::Result<BlockRow> {
     println!("preparing block {}", block_number);
 
@@ -281,8 +283,16 @@ async fn propose_block(
         outputs: vec![TransactionOutput::Value {
             value: 5,
 
-            // TODO: https://linear.app/quible/issue/QUI-103/ensure-coinbase-transactions-can-only-be-spent-by-block-proposer
-            pubkey_script: vec![],
+            pubkey_script: vec![
+                TransactionOpCode::Dup,
+                TransactionOpCode::Push {
+                    data: Address::from_private_key(&node_signing_key)
+                        .into_array()
+                        .to_vec(),
+                },
+                TransactionOpCode::EqualVerify,
+                TransactionOpCode::CheckSigVerify,
+            ],
         }],
         locktime: 0,
     };
@@ -619,6 +629,7 @@ async fn main() -> anyhow::Result<()> {
     );
     let mut signing_key_decoded = [0u8; 32];
     hex::decode_to_slice(signing_key_hex, &mut signing_key_decoded)?;
+    let signing_key = SigningKey::from_slice(&signing_key_decoded)?;
 
     let p2p_port: u16 = env::var("QUIBLE_P2P_PORT")
         .unwrap_or_else(|_| "9014".to_owned())
@@ -686,7 +697,7 @@ async fn main() -> anyhow::Result<()> {
         _ => {}
     }
 
-    let result = propose_block(block_number, &db_arc).await;
+    let result = propose_block(block_number, &db_arc, &signing_key).await;
 
     if let Err(e) = result {
         eprintln!("Error in propose_block: {:#?}", e);
@@ -698,7 +709,7 @@ async fn main() -> anyhow::Result<()> {
                 block_timestamp = block_timestamp + SLOT_DURATION;
                 block_number += 1;
 
-                let result = propose_block(block_number, &db_arc).await;
+                let result = propose_block(block_number, &db_arc, &signing_key).await;
 
                 if let Err(e) = result {
                     eprintln!("Error in propose_block: {:#?}", e);
@@ -747,16 +758,17 @@ mod tests {
     use super::{db, run_derive_server};
     use crate::db::types::{BlockRow, ObjectRow, PendingTransactionRow};
     use crate::propose_block;
-    use crate::quible_ecdsa_utils::recover_signer_unchecked;
+    use crate::quible_ecdsa_utils::{recover_signer_unchecked, sign_message};
     use crate::rpc::QuibleRpcClient;
     use crate::tx::engine::compute_object_id;
     use crate::tx::types::{
         Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionInput, TransactionOpCode,
         TransactionOutpoint, TransactionOutput,
     };
-    use alloy_primitives::Address;
+    use alloy_primitives::{Address, B256};
     use anyhow::anyhow;
     use jsonrpsee::http_client::HttpClient;
+    use k256::ecdsa::SigningKey;
     use std::sync::Arc;
     use surrealdb::engine::any;
 
@@ -817,16 +829,15 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_addr = run_derive_server(
-            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
-            &db_arc,
-            0,
-        )
-        .await?;
+        let node_signing_key_bytes =
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
+        let node_signing_key = SigningKey::from_slice(&node_signing_key_bytes)?;
+
+        let server_addr = run_derive_server(node_signing_key_bytes, &db_arc, 0).await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
 
-        propose_block(1, &db_arc).await?;
+        propose_block(1, &db_arc, &node_signing_key).await?;
 
         // Query pending transactions from SurrealDB
         let block_rows: Vec<BlockRow> = db_arc.select("blocks").await?;
@@ -852,12 +863,11 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_addr = run_derive_server(
-            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
-            &db_arc,
-            0,
-        )
-        .await?;
+        let node_signing_key_bytes =
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
+        let node_signing_key = SigningKey::from_slice(&node_signing_key_bytes)?;
+
+        let server_addr = run_derive_server(node_signing_key_bytes, &db_arc, 0).await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
@@ -895,7 +905,7 @@ mod tests {
             .await
             .unwrap();
 
-        propose_block(1, &db_arc).await?;
+        propose_block(1, &db_arc, &node_signing_key).await?;
 
         // Query pending transactions from SurrealDB
         let block_rows: Vec<BlockRow> = db_arc.select("blocks").await?;
@@ -939,16 +949,15 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_addr = run_derive_server(
-            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
-            &db_arc,
-            0,
-        )
-        .await?;
+        let node_signing_key_bytes =
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
+        let node_signing_key = SigningKey::from_slice(&node_signing_key_bytes)?;
+
+        let server_addr = run_derive_server(node_signing_key_bytes, &db_arc, 0).await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
 
-        let block_row = propose_block(1, &db_arc).await?;
+        let block_row = propose_block(1, &db_arc, &node_signing_key).await?;
 
         let coinbase_transaction_hash = match &block_row.transactions[..] {
             [(hash, _)] => Ok(*hash),
@@ -956,8 +965,8 @@ mod tests {
         }?;
 
         let client = HttpClient::builder().build(url)?;
-        // let signer_secret = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
-        let sample_first_transaction = Transaction::Version1 {
+
+        let sample_first_transaction = &mut Transaction::Version1 {
             inputs: vec![TransactionInput {
                 outpoint: TransactionOutpoint {
                     txid: coinbase_transaction_hash,
@@ -972,12 +981,38 @@ mod tests {
             locktime: 0,
         };
 
+        let signature = sign_message(
+            B256::from_slice(&node_signing_key_bytes),
+            sample_first_transaction.hash()?.into(),
+        )?
+        .to_vec();
+
+        match sample_first_transaction {
+            Transaction::Version1 { inputs, .. } => {
+                for input in inputs.iter_mut() {
+                    *input = TransactionInput {
+                        outpoint: input.clone().outpoint,
+                        signature_script: vec![
+                            TransactionOpCode::Push {
+                                data: signature.clone(),
+                            },
+                            TransactionOpCode::Push {
+                                data: Address::from_private_key(&node_signing_key)
+                                    .into_array()
+                                    .to_vec(),
+                            },
+                        ],
+                    }
+                }
+            }
+        }
+
         client
             .send_transaction(sample_first_transaction.clone())
             .await
             .unwrap();
 
-        propose_block(2, &db_arc).await?;
+        propose_block(2, &db_arc, &node_signing_key).await?;
 
         // Query pending transactions from SurrealDB
         let mut result = db_arc
@@ -1018,12 +1053,11 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_addr = run_derive_server(
-            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"),
-            &db_arc,
-            0,
-        )
-        .await?;
+        let node_signing_key_bytes =
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
+        let node_signing_key = SigningKey::from_slice(&node_signing_key_bytes)?;
+
+        let server_addr = run_derive_server(node_signing_key_bytes, &db_arc, 0).await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
@@ -1061,7 +1095,7 @@ mod tests {
             .await
             .unwrap();
 
-        propose_block(1, &db_arc).await?;
+        propose_block(1, &db_arc, &node_signing_key).await?;
 
         // Query pending transactions from SurrealDB
         let block_rows: Vec<BlockRow> = db_arc.select("blocks").await?;
@@ -1114,16 +1148,13 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_signer_key = k256::ecdsa::SigningKey::from_slice(&hex_literal::hex!(
-            "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-        ))?;
+        let server_signing_key_bytes =
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
 
-        let server_addr = run_derive_server(
-            server_signer_key.to_bytes().as_slice().try_into()?,
-            &db_arc,
-            0,
-        )
-        .await?;
+        let server_signing_key = k256::ecdsa::SigningKey::from_slice(&server_signing_key_bytes)?;
+
+        let server_addr = run_derive_server(server_signing_key_bytes, &db_arc, 0).await?;
+
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
@@ -1146,7 +1177,7 @@ mod tests {
 
         client.send_transaction(sample_transaction.clone()).await?;
 
-        propose_block(1, &db_arc).await?;
+        propose_block(1, &db_arc, &server_signing_key).await?;
 
         let cert = client
             .request_certificate(object_id_raw, vec![1, 2, 3])
@@ -1156,7 +1187,7 @@ mod tests {
         assert_eq!(cert.details.claim, vec![1, 2, 3]);
         assert_eq!(
             recover_signer_unchecked(&cert.signature.raw, &cert.details.hash()?)?,
-            Address::from_public_key(server_signer_key.verifying_key())
+            Address::from_private_key(&server_signing_key)
         );
 
         Ok(())
@@ -1171,12 +1202,12 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_signer_key = k256::ecdsa::SigningKey::from_slice(&hex_literal::hex!(
-            "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-        ))?;
+        let server_signing_key_bytes =
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
+        let server_signing_key = k256::ecdsa::SigningKey::from_slice(&server_signing_key_bytes)?;
 
         let server_addr = run_derive_server(
-            server_signer_key.to_bytes().as_slice().try_into()?,
+            server_signing_key.to_bytes().as_slice().try_into()?,
             &db_arc,
             0,
         )
@@ -1203,7 +1234,7 @@ mod tests {
 
         client.send_transaction(sample_transaction.clone()).await?;
 
-        propose_block(1, &db_arc).await?;
+        propose_block(1, &db_arc, &server_signing_key).await?;
 
         let failure_response = client
             .request_certificate(object_id_raw, vec![4, 5, 6])
@@ -1231,30 +1262,31 @@ mod tests {
 
         let db_arc = Arc::new(db);
 
-        let server_signer_key = k256::ecdsa::SigningKey::from_slice(&hex_literal::hex!(
-            "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-        ))?;
+        let server_signing_key_bytes =
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
 
-        let server_addr = run_derive_server(
-            server_signer_key.to_bytes().as_slice().try_into()?,
-            &db_arc,
-            0,
-        )
-        .await?;
+        let server_signing_key = k256::ecdsa::SigningKey::from_slice(&server_signing_key_bytes)?;
+        let server_signing_key_bytes: [u8; 32] =
+            server_signing_key.to_bytes().as_slice().try_into()?;
+
+        let user_signing_key = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+
+        let server_addr = run_derive_server(server_signing_key_bytes, &db_arc, 0).await?;
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
 
-        let block_row = propose_block(1, &db_arc).await?;
+        let block_row = propose_block(1, &db_arc, &server_signing_key).await?;
 
         let coinbase_transaction_hash = match &block_row.transactions[..] {
             [(hash, _)] => Ok(*hash),
             _ => Err(anyhow!("missing coinbase transaction")),
         }?;
 
-        let owner_address = Address::from_private_key(&server_signer_key);
+        let owner_address = Address::from_private_key(&server_signing_key.clone());
+        let user_address = Address::from_private_key(&user_signing_key.clone());
 
-        let sample_transaction = Transaction::Version1 {
+        let sample_transaction = &mut Transaction::Version1 {
             inputs: vec![TransactionInput {
                 outpoint: TransactionOutpoint {
                     txid: coinbase_transaction_hash,
@@ -1267,7 +1299,7 @@ mod tests {
                 pubkey_script: vec![
                     TransactionOpCode::Dup,
                     TransactionOpCode::Push {
-                        data: owner_address.to_vec(),
+                        data: user_address.to_vec(),
                     },
                     TransactionOpCode::EqualVerify,
                     TransactionOpCode::CheckSigVerify,
@@ -1276,12 +1308,36 @@ mod tests {
             locktime: 0,
         };
 
+        let signature = sign_message(
+            B256::from_slice(&server_signing_key_bytes),
+            sample_transaction.hash()?.into(),
+        )?
+        .to_vec();
+
+        match sample_transaction {
+            Transaction::Version1 { inputs, .. } => {
+                for input in inputs.iter_mut() {
+                    *input = TransactionInput {
+                        outpoint: input.clone().outpoint,
+                        signature_script: vec![
+                            TransactionOpCode::Push {
+                                data: signature.clone(),
+                            },
+                            TransactionOpCode::Push {
+                                data: owner_address.into_array().to_vec(),
+                            },
+                        ],
+                    }
+                }
+            }
+        }
+
         client.send_transaction(sample_transaction.clone()).await?;
 
-        propose_block(2, &db_arc).await?;
+        propose_block(2, &db_arc, &server_signing_key).await?;
 
         let payload = client
-            .fetch_unspent_value_outputs_by_owner(owner_address.into_array())
+            .fetch_unspent_value_outputs_by_owner(user_address.into_array())
             .await?;
 
         assert_eq!(payload.total_value, 5);
