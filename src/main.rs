@@ -3,7 +3,8 @@ use anyhow::anyhow;
 use async_trait::async_trait;
 use cert::types::{CertificateSigningRequestDetails, QuibleSignature, SignedCertificate};
 use db::types::{
-    BlockRow, ObjectRow, PendingTransactionRow, SurrealID, TrackerPing, TransactionOutputRow,
+    BlockRow, IntermediateFaucetOutputRow, ObjectRow, PendingTransactionRow, SurrealID,
+    TrackerPing, TransactionOutputRow,
 };
 use futures::prelude::stream::StreamExt;
 use hex;
@@ -32,10 +33,10 @@ use tokio::{
 use tower_http::cors::{Any, CorsLayer};
 use tx::engine::{collect_valid_block_transactions, ExecutionContext};
 use tx::types::{
-    BlockHeader, Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionOpCode,
-    TransactionOutpoint, TransactionOutput,
+    BlockHeader, Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionInput,
+    TransactionOpCode, TransactionOutpoint, TransactionOutput,
 };
-use types::{HealthCheckResponse, ValueOutputEntry, ValueOutputsPayload};
+use types::{FaucetOutputPayload, HealthCheckResponse, ValueOutputEntry, ValueOutputsPayload};
 
 use rpc::QuibleRpcServer;
 
@@ -110,7 +111,10 @@ impl ExecutionContext for QuibleBlockProposerExecutionContextImpl {
                 Ok(transaction_output_row.output)
             }
 
-            None => Err(anyhow!("transaction hash not found!")),
+            None => {
+                dbg!(outpoint);
+                Err(anyhow!("transaction hash not found!"))
+            }
         }
     }
 
@@ -279,7 +283,19 @@ async fn propose_block(
         .collect::<Result<Vec<([u8; 32], Transaction)>, anyhow::Error>>()?;
 
     let coinbase_transaction = Transaction::Version1 {
-        inputs: vec![],
+        inputs: vec![TransactionInput {
+            outpoint: TransactionOutpoint {
+                txid: [0u8; 32],
+                index: 0,
+            },
+            signature_script: vec![
+                // we use this so that the transaction hash is unique for each block
+                TransactionOpCode::Push {
+                    data: previous_block_header_hash.to_vec(),
+                },
+            ],
+        }],
+
         outputs: vec![TransactionOutput::Value {
             value: 5,
 
@@ -301,7 +317,7 @@ async fn propose_block(
 
     let block_row = BlockRow {
         id: SurrealID(Thing::from((
-            "pending_transactions".to_string(),
+            "blocks".to_string(),
             block_header_hash_hex.clone().to_string(),
         ))),
         hash: block_header_hash_hex,
@@ -381,37 +397,48 @@ pub struct QuibleRpcServerImpl {
     node_signer_key: [u8; 32],
 }
 
+fn format_pending_transaction_row(
+    transaction: Transaction,
+) -> Result<([u8; 32], PendingTransactionRow), ErrorObjectOwned> {
+    let transaction_hash = transaction.hash().map_err(|err| {
+        ErrorObjectOwned::owned::<String>(
+            CALL_EXECUTION_FAILED_CODE,
+            "call execution failed: failed to compute transaction hash",
+            Some(format!("{}", err.root_cause())),
+        )
+    })?;
+    // let transaction_json = serde_json::to_value(&transaction).unwrap();
+
+    let transaction_hash_hex = hex::encode(transaction_hash);
+    Ok((
+        transaction_hash,
+        PendingTransactionRow {
+            id: SurrealID(Thing::from((
+                "pending_transactions".to_string(),
+                transaction_hash_hex.clone().to_string(),
+            ))),
+
+            // TODO: https://linear.app/quible/issue/QUI-99/use-surrealdb-bytes-type-for-storing-hashes
+            // hash: surrealdb::sql::Bytes::from(transaction_hash.to_vec()),
+            hash: transaction_hash_hex,
+
+            data: transaction.clone(),
+
+            // TODO: https://linear.app/quible/issue/QUI-100/track-transaction-sizes-and-only-pull-small-enough-transactions
+            size: 0,
+        },
+    ))
+}
+
 #[jsonrpsee_async_trait]
 impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
     async fn send_transaction(&self, transaction: Transaction) -> Result<(), ErrorObjectOwned> {
-        let transaction_hash = transaction.hash().map_err(|err| {
-            ErrorObjectOwned::owned::<String>(
-                CALL_EXECUTION_FAILED_CODE,
-                "call execution failed: failed to compute transaction hash",
-                Some(format!("{}", err.root_cause())),
-            )
-        })?;
-        // let transaction_json = serde_json::to_value(&transaction).unwrap();
+        let (_, pending_transaction_row) = format_pending_transaction_row(transaction)?;
 
-        let transaction_hash_hex = hex::encode(transaction_hash);
         let result: Result<Vec<PendingTransactionRow>, surrealdb::Error> = self
             .db
             .create("pending_transactions")
-            .content(PendingTransactionRow {
-                id: SurrealID(Thing::from((
-                    "pending_transactions".to_string(),
-                    transaction_hash_hex.clone().to_string(),
-                ))),
-
-                // TODO: https://linear.app/quible/issue/QUI-99/use-surrealdb-bytes-type-for-storing-hashes
-                // hash: surrealdb::sql::Bytes::from(transaction_hash.to_vec()),
-                hash: transaction_hash_hex,
-
-                data: transaction.clone(),
-
-                // TODO: https://linear.app/quible/issue/QUI-100/track-transaction-sizes-and-only-pull-small-enough-transactions
-                size: 0,
-            })
+            .content(pending_transaction_row)
             .await;
 
         match result {
@@ -523,12 +550,10 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
             .map_err(|err| {
                 ErrorObjectOwned::owned(
                     CALL_EXECUTION_FAILED_CODE,
-                    "call execution failed: could not find identity or claim",
+                    "call execution failed: failed to fetch unspent value outputs",
                     Some(err.to_string()),
                 )
             })?;
-
-        dbg!(output_rows.len());
 
         let mut total_value = 0u64;
 
@@ -574,6 +599,278 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
             outputs: output_entries,
         })
     }
+
+    async fn request_faucet_output(&self) -> Result<FaucetOutputPayload, ErrorObjectOwned> {
+        let result = self
+            .db
+            .query("SELECT * FROM intermediate_faucet_outputs ORDER BY timestamp DESC LIMIT 1")
+            .await;
+
+        let output_rows: Vec<IntermediateFaucetOutputRow> = result
+            .and_then(|mut response| response.take(0))
+            .map_err(|err| {
+                ErrorObjectOwned::owned(
+                    CALL_EXECUTION_FAILED_CODE,
+                    "call execution failed: database query error",
+                    Some(err.to_string()),
+                )
+            })?;
+
+        match &output_rows[..] {
+            [IntermediateFaucetOutputRow {
+                transaction_hash_hex,
+                output_index,
+                owner_signing_key_hex,
+                ..
+            }, ..] => {
+                let mut transaction_hash = [0u8; 32];
+                hex::decode_to_slice(transaction_hash_hex, &mut transaction_hash).map_err(
+                    |err| {
+                        ErrorObjectOwned::owned(
+                            CALL_EXECUTION_FAILED_CODE,
+                            "call execution failed: failed to decode transaction hash hex",
+                            Some(err.to_string()),
+                        )
+                    },
+                )?;
+
+                let mut owner_signing_key_array = [0u8; 32];
+                hex::decode_to_slice(owner_signing_key_hex, &mut owner_signing_key_array).map_err(
+                    |err| {
+                        ErrorObjectOwned::owned(
+                            CALL_EXECUTION_FAILED_CODE,
+                            "call execution failed: failed to decode owner signing key hex",
+                            Some(err.to_string()),
+                        )
+                    },
+                )?;
+
+                generate_intermediate_faucet_output(&self).await?;
+
+                Ok(FaucetOutputPayload {
+                    outpoint: TransactionOutpoint {
+                        txid: transaction_hash,
+                        index: *output_index,
+                    },
+                    value: 0, // TODO
+                    owner_signing_key: owner_signing_key_array,
+                })
+            }
+
+            _ => Err(ErrorObjectOwned::owned(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to find existing intermediate faucet output",
+                None as Option<String>,
+            )),
+        }
+    }
+}
+
+async fn generate_intermediate_faucet_output(
+    server: &QuibleRpcServerImpl,
+) -> Result<(), ErrorObjectOwned> {
+    let temporary_owner_signing_key = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+    let temporary_owner_signing_key_hex = hex::encode(temporary_owner_signing_key.to_bytes());
+    let temporary_owner_address = Address::from_private_key(&temporary_owner_signing_key);
+
+    // TODO: https://linear.app/quible/issue/QUI-111/refactor-db-schema-and-signing-key-usage
+    //
+    // parsing the signing key like this should happen
+    // before the QuibleRpcServerImpl is instantiated
+    let node_signing_key = SigningKey::from_slice(&server.node_signer_key).map_err(|err| {
+        ErrorObjectOwned::owned(
+            CALL_EXECUTION_FAILED_CODE,
+            "call execution failed: failed to parse node signer key",
+            Some(err.to_string()),
+        )
+    })?;
+
+    let owner_address = Address::from_private_key(&node_signing_key);
+    let owner_address_hex = hex::encode(owner_address);
+    let result = server
+        .db
+        .query(
+            "\n\
+                SELECT * FROM transaction_outputs\n\
+                WHERE owner = $owner\n\
+                AND spent = false\n\
+                AND output.type = \"Value\"\n\
+                AND count(<-spending<-intermediate_faucet_outputs) = 0
+                LIMIT 1",
+        )
+        .bind(("owner", owner_address_hex))
+        .await;
+
+    let output_rows: Vec<TransactionOutputRow> = result
+        .and_then(|mut response| response.take(0))
+        .map_err(|err| {
+        ErrorObjectOwned::owned(
+            CALL_EXECUTION_FAILED_CODE,
+            "call execution failed: failed to fetch unspent value outputs",
+            Some(err.to_string()),
+        )
+    })?;
+
+    let missing_output_err = ErrorObjectOwned::owned(
+        CALL_EXECUTION_FAILED_CODE,
+        "call execution failed: no value outputs available",
+        None as Option<String>,
+    );
+
+    let (origin_outpoint, origin_output) = match &output_rows[..] {
+        [row, ..] => {
+            let mut transaction_hash = [0u8; 32];
+            hex::decode_to_slice(row.transaction_hash.clone(), &mut transaction_hash).map_err(
+                |err| {
+                    ErrorObjectOwned::owned(
+                        CALL_EXECUTION_FAILED_CODE,
+                        "call execution failed: failed to decode transaction hash hex",
+                        Some(err.to_string()),
+                    )
+                },
+            )?;
+
+            let outpoint = TransactionOutpoint {
+                txid: transaction_hash,
+                index: row.output_index,
+            };
+
+            Ok((outpoint, row.output.clone()))
+        }
+
+        _ => Err(missing_output_err.clone()),
+    }?;
+
+    let TransactionOutput::Value { value, .. } = origin_output else {
+        return Err(missing_output_err);
+    };
+
+    let unsigned_intermediate_faucet_transaction_inputs = vec![TransactionInput {
+        outpoint: origin_outpoint.clone(),
+        signature_script: vec![],
+    }];
+
+    let unsigned_intermediate_faucet_transaction_outputs = vec![TransactionOutput::Value {
+        value,
+        pubkey_script: vec![
+            TransactionOpCode::Dup,
+            TransactionOpCode::Push {
+                data: temporary_owner_address.into_array().to_vec(),
+            },
+            TransactionOpCode::EqualVerify,
+            TransactionOpCode::CheckSigVerify,
+        ],
+    }];
+
+    let unsigned_intermediate_faucet_transaction = Transaction::Version1 {
+        inputs: unsigned_intermediate_faucet_transaction_inputs.clone(),
+        outputs: unsigned_intermediate_faucet_transaction_outputs.clone(),
+        locktime: 0,
+    };
+
+    let unsigned_intermediate_faucet_transaction_hash = unsigned_intermediate_faucet_transaction
+        .hash()
+        .map_err(|err| {
+            ErrorObjectOwned::owned(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to compute transaction hash",
+                Some(err.to_string()),
+            )
+        })?;
+
+    let signature = sign_message(
+        B256::from_slice(&node_signing_key.to_bytes()[..]),
+        unsigned_intermediate_faucet_transaction_hash.into(),
+    )
+    .map_err(|err| {
+        ErrorObjectOwned::owned(
+            CALL_EXECUTION_FAILED_CODE,
+            "call execution failed: failed to sign transaction",
+            Some(err.to_string()),
+        )
+    })?
+    .to_vec();
+
+    let signed_intermediate_faucet_transaction = Transaction::Version1 {
+        inputs: unsigned_intermediate_faucet_transaction_inputs
+            .iter()
+            .map(|input| TransactionInput {
+                outpoint: input.outpoint.clone(),
+                signature_script: vec![
+                    TransactionOpCode::Push {
+                        data: signature.clone(),
+                    },
+                    TransactionOpCode::Push {
+                        data: owner_address.into_array().to_vec(),
+                    },
+                ],
+            })
+            .collect(),
+        outputs: unsigned_intermediate_faucet_transaction_outputs,
+        locktime: 0,
+    };
+
+    let (_, signed_intermediate_faucet_transaction_row) =
+        format_pending_transaction_row(signed_intermediate_faucet_transaction)?;
+
+    let signed_intermediate_faucet_transaction_row_hash_hex =
+        signed_intermediate_faucet_transaction_row.clone().hash;
+
+    let _ = server
+        .db
+        .query(
+            "
+                BEGIN;
+                INSERT INTO pending_transactions $transaction;
+                CREATE $faucet_transaction_id SET
+                  transaction_hash_hex = $transaction_hash_hex,
+                  output_index = 0,
+                  owner_signing_key_hex = $owner_signing_key_hex,
+                  timestamp = time::now();
+                RELATE $faucet_transaction_id->spending->$origin_transaction_output_id;
+                COMMIT;
+            ",
+        )
+        .bind((
+            "transaction",
+            signed_intermediate_faucet_transaction_row.clone(),
+        ))
+        .bind((
+            "transaction_hash_hex",
+            signed_intermediate_faucet_transaction_row_hash_hex.clone(),
+        ))
+        .bind((
+            "faucet_transaction_id",
+            SurrealID(Thing::from((
+                "intermediate_faucet_outputs".to_string(),
+                format!(
+                    "{}:{}",
+                    signed_intermediate_faucet_transaction_row_hash_hex, 0
+                ),
+            ))),
+        ))
+        .bind(("owner_signing_key_hex", temporary_owner_signing_key_hex))
+        .bind((
+            "origin_transaction_output_id",
+            SurrealID(Thing::from((
+                "transaction_outputs".to_string(),
+                format!(
+                    "{}:{}",
+                    hex::encode(origin_outpoint.clone().txid),
+                    origin_outpoint.index
+                ),
+            ))),
+        ))
+        .await
+        .map_err(|err| {
+            ErrorObjectOwned::owned(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to insert intermediate faucet transaction data",
+                Some(err.to_string()),
+            )
+        })?;
+
+    Ok(())
 }
 
 async fn run_derive_server(
@@ -757,7 +1054,6 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use super::{db, run_derive_server};
     use crate::db::types::{BlockRow, ObjectRow, PendingTransactionRow};
-    use crate::propose_block;
     use crate::quible_ecdsa_utils::{recover_signer_unchecked, sign_message};
     use crate::rpc::QuibleRpcClient;
     use crate::tx::engine::compute_object_id;
@@ -765,6 +1061,7 @@ mod tests {
         Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionInput, TransactionOpCode,
         TransactionOutpoint, TransactionOutput,
     };
+    use crate::{generate_intermediate_faucet_output, propose_block, QuibleRpcServerImpl};
     use alloy_primitives::{Address, B256};
     use anyhow::anyhow;
     use jsonrpsee::http_client::HttpClient;
@@ -1338,6 +1635,155 @@ mod tests {
 
         let payload = client
             .fetch_unspent_value_outputs_by_owner(user_address.into_array())
+            .await?;
+
+        assert_eq!(payload.total_value, 5);
+
+        match &payload.outputs[..] {
+            [output_row] => {
+                assert_eq!(output_row.outpoint.txid, sample_transaction.clone().hash()?);
+
+                Ok(())
+            }
+
+            _ => {
+                dbg!(payload.clone().outputs);
+                Err(anyhow!("unexpected number of outputs"))
+            }
+        }?;
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn fails_to_find_faucet_outputs_when_none_are_generated() -> anyhow::Result<()> {
+        // Initialize SurrealDB
+        let db = any::connect("memory").await?;
+        db.use_ns("quible").use_db("quible_node").await?;
+        db::schema::initialize_db(&db).await?;
+
+        let db_arc = Arc::new(db);
+
+        let server_signer_key = k256::ecdsa::SigningKey::from_slice(&hex_literal::hex!(
+            "ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+        ))?;
+
+        let server_addr = run_derive_server(
+            server_signer_key.to_bytes().as_slice().try_into()?,
+            &db_arc,
+            0,
+        )
+        .await?;
+        let url = format!("http://{}", server_addr);
+        println!("server listening at {}", url);
+        let client = HttpClient::builder().build(url)?;
+
+        let _ = propose_block(1, &db_arc, &server_signer_key).await?;
+
+        let result = client.request_faucet_output().await;
+
+        match result {
+            Err(jsonrpsee::core::client::error::Error::Call(err)) => {
+                assert_eq!(
+                    err.message(),
+                    "call execution failed: failed to find existing intermediate faucet output",
+                );
+                Ok(())
+            }
+
+            _ => Err(anyhow!("expected response to be Err(Call(_))")),
+        }
+    }
+
+    #[tokio::test]
+    async fn generates_spendable_faucet_outputs() -> anyhow::Result<()> {
+        // Initialize SurrealDB
+        let db = any::connect("memory").await?;
+        db.use_ns("quible").use_db("quible_node").await?;
+        db::schema::initialize_db(&db).await?;
+
+        let db_arc = Arc::new(db);
+
+        let server_signer_key_bytes =
+            hex_literal::hex!("ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80");
+
+        let server_signer_key = k256::ecdsa::SigningKey::from_slice(&server_signer_key_bytes)?;
+
+        let faucet_user_signing_key = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
+        let faucet_user_address = Address::from_private_key(&faucet_user_signing_key);
+
+        let server_addr = run_derive_server(server_signer_key_bytes, &db_arc, 0).await?;
+        let url = format!("http://{}", server_addr);
+        println!("server listening at {}", url);
+        let client = HttpClient::builder().build(url)?;
+
+        let _ = propose_block(1, &db_arc, &server_signer_key).await?;
+
+        generate_intermediate_faucet_output(&QuibleRpcServerImpl {
+            db: db_arc.clone(),
+            node_signer_key: server_signer_key_bytes,
+        })
+        .await?;
+
+        // extra block proposal ensures that the
+        // intermediate transaction is executed
+        let _ = propose_block(2, &db_arc, &server_signer_key).await?;
+
+        let faucet_payload = client.request_faucet_output().await?;
+
+        let faucet_owner_signing_key_bytes = faucet_payload.owner_signing_key;
+        let faucet_owner_address =
+            Address::from_private_key(&SigningKey::from_slice(&faucet_owner_signing_key_bytes)?);
+
+        let sample_transaction = &mut Transaction::Version1 {
+            inputs: vec![TransactionInput {
+                outpoint: faucet_payload.outpoint,
+                signature_script: vec![],
+            }],
+            outputs: vec![TransactionOutput::Value {
+                value: 5,
+                pubkey_script: vec![
+                    TransactionOpCode::Dup,
+                    TransactionOpCode::Push {
+                        data: faucet_user_address.into_array().to_vec(),
+                    },
+                    TransactionOpCode::EqualVerify,
+                    TransactionOpCode::CheckSigVerify,
+                ],
+            }],
+            locktime: 0,
+        };
+
+        let signature = sign_message(
+            B256::from_slice(&faucet_owner_signing_key_bytes),
+            sample_transaction.hash()?.into(),
+        )?
+        .to_vec();
+
+        match sample_transaction {
+            Transaction::Version1 { inputs, .. } => {
+                for input in inputs.iter_mut() {
+                    *input = TransactionInput {
+                        outpoint: input.clone().outpoint,
+                        signature_script: vec![
+                            TransactionOpCode::Push {
+                                data: signature.clone(),
+                            },
+                            TransactionOpCode::Push {
+                                data: faucet_owner_address.into_array().to_vec(),
+                            },
+                        ],
+                    }
+                }
+            }
+        }
+
+        client.send_transaction(sample_transaction.clone()).await?;
+
+        propose_block(3, &db_arc, &server_signer_key).await?;
+
+        let payload = client
+            .fetch_unspent_value_outputs_by_owner(faucet_user_address.into_array())
             .await?;
 
         assert_eq!(payload.total_value, 5);

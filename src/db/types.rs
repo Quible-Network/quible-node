@@ -46,3 +46,11 @@ pub struct ObjectRow {
     pub cert_ttl: u64,
     pub claims: Vec<Vec<u8>>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IntermediateFaucetOutputRow {
+    pub id: SurrealID,
+    pub transaction_hash_hex: String,
+    pub output_index: u64,
+    pub owner_signing_key_hex: String,
+}

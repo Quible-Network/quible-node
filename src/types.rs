@@ -231,3 +231,10 @@ pub struct ValueOutputsPayload {
     pub total_value: u64,
     pub outputs: Vec<ValueOutputEntry>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FaucetOutputPayload {
+    pub outpoint: TransactionOutpoint,
+    pub value: u64,
+    pub owner_signing_key: [u8; 32],
+}
