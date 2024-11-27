@@ -73,7 +73,7 @@ pub struct ObjectIdentifier {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", content = "data")]
 pub enum TransactionOutput {
     Value {
         #[serde(with = "postcard::fixint::le")]
