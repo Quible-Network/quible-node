@@ -1,17 +1,16 @@
-Quible Node
-===========
+# Quible Node
 
-*Flagship reference implementation of the Quible Protocol, for use in the [Quible Network](https://quible.network).*
+_Flagship reference implementation of the Quible Protocol, for use in the [Quible Network](https://quible.network)._
 
 ### What is Quible?
 
-Quible is a proof-of-stake blockchain, designed and built from scratch to facilitate decentralized ECDSA signature generation via multi-party computation. At its core, it offers the ability for a user to upload an unordered set of identifiers, and subsequently request signed proofs which indicate whether a given identifier is present (or not present) in the set. This feature is utilized for implementing access control, by allowing users to upload their access list and generate EVM-friendly ECDSA signatures on-demand from the Quible Network.
+Quible is a blockchain-powered decentralized certificate authority, designed to fulfill practical needs for authentication in a variety of use cases. Traditional certificate authorities are underutilized today because they are often overlooked and considered to be only appropriate for certifying domain names in the context of TLS/SSL connections. Quible aims to bridge the gap between signature-based authentication standards such as JSON Web Tokens and the lesser-known world of certificate authorities. Quible operates differently from traditional CAs in several ways. First, Quible stores identities and identity claims within a blockchain, replacing the need for applications and developers to build their own certificate management solution. Second, Quible handles certificate signing requests on-demand, allowing for easy integrations and short certificate lifespans. Similar to JSON Web Tokens, Quible certificates are much simpler and easy to work with than traditional X.509 certificates.
 
-![quible diagram](docs/quible-diagram.svg)
+![quible diagram](docs/quible-network-architecture.png)
 
 ## Installation
 
-*Installation instructions coming soon!*
+_Installation instructions coming soon!_
 
 ## Acknowledgements
 
