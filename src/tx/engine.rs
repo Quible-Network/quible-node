@@ -144,7 +144,7 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
                             }
                         }
 
-                        TransactionOpCode::CheckSigVerify => {
+                        TransactionOpCode::CheckEip191SigVerify => {
                             let pubkey_maybe = stack.pop();
                             let sig_maybe = stack.pop();
 
@@ -162,7 +162,8 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
                                         }
                                     }
 
-                                    let signable_transaction_hash = signable_transaction.hash()?;
+                                    let signable_transaction_hash =
+                                        signable_transaction.hash_eip191()?;
                                     let sig_slice: [u8; 65] = sig.try_into().map_err(|_| {
                                         anyhow!("pubkey script failed (signature is not 65 bytes)")
                                     })?;
@@ -305,12 +306,12 @@ mod tests {
         let mut transaction_map: HashMap<[u8; 32], Transaction> = HashMap::new();
         let mempool = pending_transactions
             .iter()
-            .map(|tx| (tx.hash().unwrap(), tx.clone()))
+            .map(|tx| (tx.hash_eip191().unwrap(), tx.clone()))
             .collect();
         let mut spent_outpoints: Vec<TransactionOutpoint> = Vec::new();
 
         for transaction in history {
-            let transaction_hash = transaction.clone().hash().unwrap();
+            let transaction_hash = transaction.clone().hash_eip191().unwrap();
             transaction_map.insert(transaction_hash, transaction.clone());
 
             let Transaction::Version1 { inputs, .. } = transaction;
@@ -403,7 +404,7 @@ mod tests {
             locktime: 0,
         };
 
-        let coinbase_hash = coinbase.hash()?;
+        let coinbase_hash = coinbase.hash_eip191()?;
 
         let mut context = create_context(
             vec![coinbase],
@@ -451,7 +452,7 @@ mod tests {
             locktime: 0,
         };
 
-        let coinbase_hash = coinbase.hash()?;
+        let coinbase_hash = coinbase.hash_eip191()?;
 
         let mut context = create_context(
             vec![coinbase],
@@ -503,7 +504,7 @@ mod tests {
             locktime: 0,
         };
 
-        let coinbase_hash = coinbase.hash()?;
+        let coinbase_hash = coinbase.hash_eip191()?;
 
         let mut context = create_context(
             vec![coinbase],
@@ -555,13 +556,13 @@ mod tests {
                                 data: signer_address.into_array().to_vec(),
                             },
                             TransactionOpCode::EqualVerify,
-                            TransactionOpCode::CheckSigVerify,
+                            TransactionOpCode::CheckEip191SigVerify,
                         ],
                     }],
                     locktime: 0,
                 };
 
-                let coinbase_hash = coinbase.hash()?;
+                let coinbase_hash = coinbase.hash_eip191()?;
 
                 let transaction = &mut Transaction::Version1 {
                     inputs: vec![TransactionInput {
@@ -581,7 +582,7 @@ mod tests {
 
                 let signature = sign_message(
                     B256::from_slice(&signer_secret.to_bytes()[..]),
-                    transaction.hash()?.into(),
+                    transaction.hash_eip191()?.into(),
                 )?
                 .to_vec();
 
@@ -642,7 +643,7 @@ mod tests {
                     locktime: 0,
                 };
 
-                let coinbase_hash = coinbase.hash()?;
+                let coinbase_hash = coinbase.hash_eip191()?;
 
                 let inputs = vec![TransactionInput {
                     outpoint: TransactionOutpoint {
@@ -713,7 +714,7 @@ mod tests {
                     locktime: 0,
                 };
 
-                let coinbase_hash = coinbase.hash()?;
+                let coinbase_hash = coinbase.hash_eip191()?;
 
                 let inputs = vec![TransactionInput {
                     outpoint: TransactionOutpoint {
@@ -785,7 +786,7 @@ mod tests {
             locktime: 0,
         };
 
-        let coinbase_hash = coinbase.hash()?;
+        let coinbase_hash = coinbase.hash_eip191()?;
 
         let inputs = vec![TransactionInput {
             outpoint: TransactionOutpoint {

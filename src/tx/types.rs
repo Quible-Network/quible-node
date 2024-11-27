@@ -1,9 +1,11 @@
+use alloy_primitives::eip191_hash_message;
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
 
 pub trait Hashable {
     fn hash(&self) -> anyhow::Result<[u8; 32]>;
+    fn hash_eip191(&self) -> anyhow::Result<[u8; 32]>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -32,7 +34,7 @@ pub enum TransactionOpCode {
     // pubkey script Pay-to-Address (P2A)
     // P2A pubkey script: OP_DUP OP_PUSH(<address>) OP_EQUALVERIFY OP_CHECKSIGVERIFY
     // P2A sig script: OP_PUSH(<sig>) OP_PUSH(<address>)
-    CheckSigVerify,
+    CheckEip191SigVerify,
     Dup,
     EqualVerify,
 
@@ -110,6 +112,11 @@ impl Hashable for Transaction {
             .try_into()
             .map_err(|_| anyhow!("failed to convert hash slice to 32 bytes"))
     }
+
+    fn hash_eip191(&self) -> anyhow::Result<[u8; 32]> {
+        let encoded_transaction = postcard::to_stdvec(self)?;
+        Ok(eip191_hash_message(encoded_transaction).0)
+    }
 }
 
 impl Hashable for BlockHeader {
@@ -121,5 +128,9 @@ impl Hashable for BlockHeader {
             .as_slice()
             .try_into()
             .map_err(|_| anyhow!("failed to convert hash slice to 32 bytes"))
+    }
+
+    fn hash_eip191(&self) -> anyhow::Result<[u8; 32]> {
+        panic!("not implemented")
     }
 }

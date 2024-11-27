@@ -83,6 +83,10 @@ impl Hashable for CertificateSigningRequestDetails {
             .try_into()
             .map_err(|_| anyhow!("failed to convert hash slice to 32 bytes"))
     }
+
+    fn hash_eip191(&self) -> anyhow::Result<[u8; 32]> {
+        panic!("not implemented")
+    }
 }
 
 impl Signable for CertificateSigningRequestDetails {
