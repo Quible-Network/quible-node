@@ -1,4 +1,9 @@
-# TypeScript SDK
+---
+sidebar_position: 2
+slug: '/sdk'
+---
+
+# Guide: TypeScript SDK
 
 Use the Quible TypeScript SDK to simplify interactions with the Quible Network. No configuration is required for requesting and signing certificates, however for creating and updating identities, you will need a hexadecimal 32-byte ECDSA private key.
 

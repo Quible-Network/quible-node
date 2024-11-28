@@ -21,3 +21,665 @@
   align-items: center;
   justify-content: center;
 }
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: top;
+    width: 100%;
+    color: #fff;
+    overflow-x: hidden;
+}
+
+.navbar {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    height: 71px;
+    width: 100%;
+    border-bottom: rgba(255, 255, 255, 0.5) 1px solid;
+    padding: 0 40px;
+    box-sizing: border-box;
+}
+
+.navbarLogo {
+    height: 60px;
+    width: auto;
+}
+
+.navbarLinks {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    width: 30%;
+}
+
+.navbarLink {
+    font-size: 18px;
+    color: rgba(255, 255, 255, 0.5);
+    text-decoration: none;
+    transition: color 0.3s;
+}
+
+.navbarLink:hover {
+    color: #fff;
+}
+
+.navbarButton {
+    font-size: 18px;
+    color: #fff;
+    background: transparent;
+    border: rgba(255, 255, 255, 0.5) 1px solid;
+    border-radius: 4px;
+    padding: 10px 20px;
+    transition: background 0.3s, color 0.3s;
+}
+
+.navbarButton:hover {
+    background: #fff;
+    color: #000;
+}
+
+.hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+}
+
+.heroSpacer {
+    height: 150px;
+    width: 100%;
+}
+
+.heroContent {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0 40px;
+    box-sizing: border-box;
+}
+
+.heroTitle {
+    font-size: 64px;
+    font-weight: 700;
+    color: #fff;
+    text-align: center;
+    margin: 0;
+}
+
+.heroTitle p {
+    margin: 0;
+}
+
+.heroSubtitle {
+    font-size: 22px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    line-height: 30px;
+    margin: 0;
+    max-width: 500px;
+    margin-top: 20px;
+    margin-bottom: 20px;
+}
+
+.gradientButton {
+    font-size: 18px;
+    color: #fff;
+    background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.26) 0%,
+        rgba(255, 255, 255, 0.08) 100%
+    );
+    border: rgba(255, 255, 255, 0.3) 1px solid;
+    border-radius: 4px;
+    padding: 10px 20px;
+    transition: background 0.3s, color 0.3s;
+    z-index: 1;
+}
+
+.heroImage {
+    width: 100%;
+    height: 50vw;
+    overflow: visible;
+    margin-top: 40px;
+    display: flex;
+    justify-content: center;
+    position: relative;
+    top: -20vw;
+}
+
+.heroImage img {
+    width: 100%;
+    height: auto;
+    object-fit: cover;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.heroDescription {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    padding: 0 40px;
+    box-sizing: border-box;
+    z-index: 1;
+}
+
+.heroDescription h1 {
+    font-size: 48px;
+    font-weight: 400;
+    color: #fff;
+    text-align: center;
+    margin: 0;
+}
+
+.heroDescription h1 > span {
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.postHeroSpacer {
+    height: 200px;
+    width: 100%;
+}
+
+.principles {
+    width: 80%;
+    border-top: 1px rgba(255, 255, 255, 0.5) solid;
+    border-bottom: 1px rgba(255, 255, 255, 0.5) solid;
+    padding-top: 75px;
+    padding-bottom: 75px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+.principlesTitle {
+    font-size: 40px;
+    font-weight: 500;
+    color: #fff;
+    text-align: center;
+    margin: 0;
+}
+
+.principlesSubtitle {
+    font-size: 20px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    margin: 0;
+    margin-top: 20px;
+    margin-bottom: 80px;
+}
+
+.principlesBoxes {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.principlesBox {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    width: 50%;
+    padding: 30px 20px;
+    box-sizing: border-box;
+    border: 1px rgba(255, 255, 255, 0.5) solid;
+}
+
+.principlesBoxNumber {
+    font-size: 22px;
+    font-weight: 300;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 0;
+}
+
+.principlesBoxText {
+    font-size: 24px;
+    font-weight: 400;
+    color: #fff;
+    margin: 0;
+    margin-top: 60px;
+}
+
+.features {
+    width: 80%;
+    padding-top: 75px;
+    padding-bottom: 75px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+}
+
+.featuresTitle {
+    font-size: 40px;
+    font-weight: 500;
+    color: #fff;
+    text-align: left;
+    margin: 0;
+}
+
+.featuresSubtitle {
+    font-size: 20px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: left;
+    margin: 0;
+    margin-top: 20px;
+    margin-bottom: 80px;
+}
+
+.featuresBoxes {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    width: 100%;
+}
+
+.featuresBox {
+    flex: 1 1 calc(33.333%);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    padding: 30px 20px;
+    box-sizing: border-box;
+    border: 1px rgba(255, 255, 255, 0.5) solid;
+    min-width: 200px;
+    margin-bottom: 20px;
+    position: relative;
+    overflow: hidden;
+}
+
+.featuresBox::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        270deg,
+        rgba(255, 255, 255, 0.25) 0%,
+        rgba(100, 100, 100, 0.4) 100%
+    );
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+.featuresBox:hover::before {
+    opacity: 1;
+}
+
+.featuresLogo {
+    width: 50px;
+    height: 50px;
+    margin-bottom: 80px;
+}
+
+.featuresBoxTitle {
+    font-size: 24px;
+    font-weight: 400;
+    color: #fff;
+    margin: 0;
+    min-height: 2.5em;
+    display: flex;
+    align-items: center;
+}
+
+.featuresBoxText {
+    font-size: 18px;
+    font-weight: 300;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 0;
+    margin-top: 10px;
+    flex-grow: 1;
+}
+
+.useCasesGradient {
+    position: relative;
+    overflow: visible;
+    width: 100%;
+    top: -40vw;
+}
+
+.useCases {
+    width: 80%;
+    padding-top: 75px;
+    padding-bottom: 75px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+}
+
+.useCasesTitle {
+    font-size: 48px;
+    font-weight: 500;
+    color: #fff;
+    text-align: center;
+    margin: 0;
+}
+
+.useCasesSubtitle {
+    font-size: 20px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: center;
+    margin: 0;
+    margin-top: 16px;
+    margin-bottom: 80px;
+}
+
+.useCasesBoxes {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+}
+
+.useCasesBox {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding: 30px 20px;
+    box-sizing: border-box;
+    border: 1px rgba(255, 255, 255, 0.5) solid;
+}
+
+.useCasesBoxTitle {
+    font-size: 22px;
+    font-weight: 400;
+    color: #fff;
+    margin: 0;
+    margin-bottom: 20px;
+}
+
+.useCasesBoxText {
+    font-size: 20px;
+    font-weight: 300;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 0;
+    margin-top: 10px;
+}
+
+.faqGradient {
+    position: relative;
+    overflow: visible;
+    width: 100%;
+    top: -40vw;
+}
+
+.closerSpacer {
+    height: 150px;
+    width: 100%;
+}
+
+.closer {
+    width: 80%;
+    padding-top: 75px;
+    padding-bottom: 75px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    z-index: 1;
+}
+
+.closerTitle {
+    font-size: 64px;
+    font-weight: 400;
+    color: #fff;
+    text-align: left;
+    margin: 0;
+}
+
+.closerTitle2 {
+    font-size: 64px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: left;
+    margin: 0;
+}
+
+.closerSubtitle {
+    font-size: 24px;
+    font-weight: 300;
+    color: rgba(255, 255, 255, 0.5);
+    text-align: left;
+    margin: 0;
+    margin-top: 30px;
+    margin-bottom: 80px;
+}
+
+.closerButtons {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+.closerButton {
+    font-size: 18px;
+    color: #fff;
+    background: transparent;
+    border: rgba(255, 255, 255, 0.5) 1px solid;
+    border-radius: 4px;
+    padding: 10px 20px;
+    transition: background 0.3s, color 0.3s;
+    margin-left: 40px;
+}
+
+.closerButton:hover {
+    background: #fff;
+    color: #000;
+}
+
+.footer {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    height: 71px;
+    width: 100%;
+    border-top: rgba(255, 255, 255, 0.5) 1px solid;
+    padding: 0 40px;
+    box-sizing: border-box;
+}
+
+.footerLeft {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    align-items: center;
+}
+
+.footerLogo {
+    height: 55px;
+    width: auto;
+    margin-right: 20px;
+}
+
+.footerText {
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.5);
+    margin: 0;
+}
+
+.footerLink {
+    font-size: 16px;
+    color: rgba(255, 255, 255, 0.5);
+    text-decoration: none;
+    margin-left: 20px;
+    transition: color 0.3s;
+}
+
+.footerLink:hover {
+    color: #fff;
+}
+
+/* Add these media queries at the end of your existing page.module.css file */
+
+@media screen and (max-width: 768px) {
+    .navbar {
+        flex-direction: column;
+        height: auto;
+        padding: 20px;
+    }
+
+    .navbarLogo {
+        margin-bottom: 20px;
+    }
+
+    .navbarLinks {
+        width: 100%;
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .navbarLink {
+        margin: 10px 0;
+    }
+
+    .navbarButton {
+        margin-top: 20px;
+    }
+
+    .heroTitle {
+        font-size: 36px;
+    }
+
+    .heroSubtitle {
+        font-size: 18px;
+    }
+
+    .heroImage {
+        height: 80vw;
+        top: -10vw;
+    }
+
+    .heroDescription h1 {
+        font-size: 24px;
+    }
+
+    .principles {
+        width: 90%;
+    }
+
+    .principlesTitle {
+        font-size: 32px;
+    }
+
+    .principlesSubtitle {
+        font-size: 18px;
+    }
+
+    .principlesBoxes {
+        flex-direction: column;
+    }
+
+    .principlesBox {
+        width: 100%;
+        margin-bottom: 20px;
+    }
+
+    .features {
+        width: 90%;
+    }
+
+    .featuresTitle {
+        font-size: 32px;
+    }
+
+    .featuresSubtitle {
+        font-size: 18px;
+    }
+
+    .featuresBoxes {
+        flex-direction: column;
+    }
+
+    .featuresBox {
+        flex: 1 1 100%;
+        margin-bottom: 20px;
+    }
+
+    .useCases {
+        width: 90%;
+    }
+
+    .useCasesTitle {
+        font-size: 32px;
+    }
+
+    .useCasesSubtitle {
+        font-size: 18px;
+    }
+
+    .useCasesBoxes {
+        grid-template-columns: 1fr;
+    }
+
+    .useCasesBox {
+        margin-bottom: 20px;
+    }
+
+    .closer {
+        width: 90%;
+    }
+
+    .closerTitle,
+    .closerTitle2 {
+        font-size: 36px;
+    }
+
+    .closerSubtitle {
+        font-size: 18px;
+    }
+
+    .closerButtons {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .closerButton {
+        margin-left: 0;
+        margin-top: 20px;
+    }
+
+    .footer {
+        flex-direction: column;
+        height: auto;
+        padding: 20px;
+    }
+
+    .footerLeft,
+    .footerRight {
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 20px;
+    }
+
+    .footerText {
+        text-align: center;
+        margin: 10px 0;
+    }
+
+    .footerLink {
+        margin: 10px 0;
+    }
+}

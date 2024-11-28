@@ -1,5 +1,6 @@
 ---
-sidebar_position: 3
+sidebar_position: 1
+title: 'API Reference'
 slug: /json-rpc
 ---
 
