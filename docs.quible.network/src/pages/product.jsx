@@ -343,7 +343,7 @@ export default () => {
             ></Link>
 
             <Link
-              to="/"
+              to="/faq"
               className="inline-block my-5 !text-quible-lightest bg-quible-black dark:!text-quible-darker dark:bg-quible-white font-bold p-3 px-4 hover:text-quible-lighter hover:dark:text-quible-dark hover:bg-quible-darkest hover:dark:bg-quible-lightest active:text-quible-light active:dark:text-quible-deepest active:bg-quible-darker active:dark:bg-quible-lighter text-xl"
             >
               SEE FAQS
