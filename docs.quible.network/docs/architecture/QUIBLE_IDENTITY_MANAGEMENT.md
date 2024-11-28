@@ -88,7 +88,7 @@ creation_transaction_output = TransactionOutput::Object {
     )
   },
 
-  // this is how we add claims to an 
+  // this is how we add claims to an identity
   data_script: [
     OpCode::Insert { data: "alice" },
     OpCode::Insert { data: "bob" },

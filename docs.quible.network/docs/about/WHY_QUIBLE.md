@@ -40,7 +40,7 @@ Here are just some mentionable benefits that address these pain points:
 
 - Quible streamlines the authentication process and gives you batteries-included state-of-the-art tooling for this problem space. We have a solution for handshakes, identity management, certificate renewal and more. No more head-scratches.
 
-- Quible is ready-to-use infrastructure. Now you don’t need to worry about scaling your auth server, configuring your services with signing keys or even building an auth server to begin with! Unlike issuing JWTs in-house, here is no incentive to increase your token lifespans. In fact, they can be as short as you want them to be!
+- Quible is ready-to-use infrastructure. Now you don’t need to worry about scaling your auth server, configuring your services with signing keys or even building an auth server to begin with! Unlike issuing JWTs in-house, there is no incentive to increase your token lifespans. In fact, they can be as short as you want them to be!
 
 - Quible is decentralized and eliminates the problem of having a single-point-of-failure in your auth infrastructure.
 

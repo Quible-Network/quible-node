@@ -48,7 +48,6 @@ export default () => {
   };
 
   const background = theme === "light" ? "e1cce2" : "8b6eb0";
-  console.log('theme', `"${theme}"`, theme === 'dark', theme === 'light')
 
   return (
     <div className="flex-grow relative h-full bg-quible-lightest dark:bg-quible-darkest">
@@ -135,7 +134,6 @@ export default () => {
                 />
               </svg>
             )}
-            foo
           </div>
         </div>
 
