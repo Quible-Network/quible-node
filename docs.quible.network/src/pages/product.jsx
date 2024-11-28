@@ -20,13 +20,14 @@ export default () => {
   const [theme, setTheme] = useState("light");
 
   useEffect(() => {
-    setTimeout(() => 
-    setTheme(
-      localStorage.theme ??
-        window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light"
-    ), 0);
+    setTimeout(() => {
+      setTheme(
+        localStorage.theme ??
+          (window.matchMedia("(prefers-color-scheme: dark)").matches
+            ? "dark"
+            : "light")
+      );
+    }, 0);
   }, [ExecutionEnvironment.canUseDOM && localStorage.theme]);
 
   refreshDarkMode();
@@ -80,16 +81,10 @@ export default () => {
             className="font-bold text-quible-darkest dark:text-quible-lightest p-5 hover:text-quible-medium dark:hover:text-quible-mild active:text-quible-mildest dark:active:text-quible-heavier flex items-center hover:shadow-[inset_0_0_0_100px_#d9c3de] dark:hover:shadow-[inset_0_0_0_100px_#9073b3]"
             target="_blank"
           >
-            <svg
-              width="20"
-              height="20"
-              viewBox="0 0 22 22"
-              fill="currentColor"
-              class="text-opacity-50 transform"
-            >
+            <svg width="20" height="20" viewBox="0 0 22 22" fill="currentColor">
               <path
                 fillRule="evenodd"
-                clip-rule="evenodd"
+                clipRule="evenodd"
                 d="M12 2C6.477 2 2 6.463 2 11.97c0 4.404 2.865 8.14 6.839 9.458.5.092.682-.216.682-.48 0-.236-.008-.864-.013-1.695-2.782.602-3.369-1.337-3.369-1.337-.454-1.151-1.11-1.458-1.11-1.458-.908-.618.069-.606.069-.606 1.003.07 1.531 1.027 1.531 1.027.892 1.524 2.341 1.084 2.91.828.092-.643.35-1.083.636-1.332-2.22-.251-4.555-1.107-4.555-4.927 0-1.088.39-1.979 1.029-2.675-.103-.252-.446-1.266.098-2.638 0 0 .84-.268 2.75 1.022A9.606 9.606 0 0112 6.82c.85.004 1.705.114 2.504.336 1.909-1.29 2.747-1.022 2.747-1.022.546 1.372.202 2.386.1 2.638.64.696 1.028 1.587 1.028 2.675 0 3.83-2.339 4.673-4.566 4.92.359.307.678.915.678 1.846 0 1.332-.012 2.407-.012 2.734 0 .267.18.577.688.48C19.137 20.107 22 16.373 22 11.969 22 6.463 17.522 2 12 2z"
               ></path>
             </svg>
@@ -107,7 +102,7 @@ export default () => {
                 viewBox="0 0 24 24"
                 strokeWidth="1.5"
                 stroke="currentColor"
-                class="size-6 w-[24px] h-[24px]"
+                className="size-6 w-[24px] h-[24px]"
               >
                 <path
                   strokeLinecap="round"
@@ -123,13 +118,13 @@ export default () => {
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
-                stroke-width="1.5"
+                strokeWidth="1.5"
                 stroke="currentColor"
-                class="size-6 text-quible-lightest w-[24px] h-[24px]"
+                className="size-6 text-quible-lightest w-[24px] h-[24px]"
               >
                 <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                   d="M21.752 15.002A9.72 9.72 0 0 1 18 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 0 0 3 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 0 0 9.002-5.998Z"
                 />
               </svg>
