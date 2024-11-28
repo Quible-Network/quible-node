@@ -241,6 +241,8 @@ const config: Config = {
       },
     },
   ],
+
+  onBrokenAnchors: 'warn'
 };
 
 export default config;

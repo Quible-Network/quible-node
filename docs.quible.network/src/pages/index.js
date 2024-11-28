@@ -1,8 +1,10 @@
 import Link from "@docusaurus/Link";
 import Logo from "../../static/img/logo.svg";
+import ExecutionEnvironment from '@docusaurus/ExecutionEnvironment';
 
 const refreshDarkMode = () => {
-  const isDark = localStorage.theme === "dark" || (!("theme" in localStorage) && window.matchMedia("(prefers-color-scheme: dark)").matches)
+  if (ExecutionEnvironment.canUseDOM) {
+    const isDark = localStorage.theme === "dark" || (!("theme" in localStorage) && window.matchMedia("(prefers-color-scheme: dark)").matches)
 
     if (isDark) {
       document.documentElement.classList.add("dark");
@@ -11,12 +13,13 @@ const refreshDarkMode = () => {
       document.documentElement.classList.remove("dark");
       document.body.classList.remove("dark");
     }
+  }
 };
 
 refreshDarkMode();
 
 export default () => {
-  window.setTimeout(() => refreshDarkMode(), 0)
+  setTimeout(() => refreshDarkMode(), 0)
 
   return (
     <div className="flex-grow relative h-full flex flex-col items-center justify-center text-xs dark:bg-black dark:text-white leading-4">
