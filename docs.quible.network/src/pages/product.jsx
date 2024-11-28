@@ -1,15 +1,15 @@
 import Link from "@docusaurus/Link";
 import Logo from "../../static/img/logo.svg";
 import { useEffect, useState } from "react";
-import ExecutionEnvironment from '@docusaurus/ExecutionEnvironment';
+import ExecutionEnvironment from "@docusaurus/ExecutionEnvironment";
 
 const refreshDarkMode = () => {
   if (ExecutionEnvironment.canUseDOM) {
     document.documentElement.classList.toggle(
       "dark",
       localStorage.theme === "dark" ||
-      (!("theme" in localStorage) &&
-        window.matchMedia("(prefers-color-scheme: dark)").matches)
+        (!("theme" in localStorage) &&
+          window.matchMedia("(prefers-color-scheme: dark)").matches)
     );
   }
 };
@@ -17,10 +17,22 @@ const refreshDarkMode = () => {
 refreshDarkMode();
 
 export default () => {
-  const [theme, setTheme] = useState(ExecutionEnvironment.canUseDOM ? localStorage.theme ?? "light" : 'light');
+  const [theme, setTheme] = useState(
+    ExecutionEnvironment.canUseDOM
+      ? localStorage.theme ??
+        window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light"
+      : "light"
+  );
 
   useEffect(() => {
-    setTheme(localStorage.theme ?? "light");
+    setTheme(
+      localStorage.theme ??
+        window.matchMedia("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light"
+    );
   }, [ExecutionEnvironment.canUseDOM && localStorage.theme]);
 
   refreshDarkMode();
