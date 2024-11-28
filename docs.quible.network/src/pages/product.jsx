@@ -17,22 +17,16 @@ const refreshDarkMode = () => {
 refreshDarkMode();
 
 export default () => {
-  const [theme, setTheme] = useState(
-    ExecutionEnvironment.canUseDOM
-      ? localStorage.theme ??
-        window.matchMedia("(prefers-color-scheme: dark)").matches
-        ? "dark"
-        : "light"
-      : "light"
-  );
+  const [theme, setTheme] = useState("light");
 
   useEffect(() => {
+    setTimeout(() => 
     setTheme(
       localStorage.theme ??
         window.matchMedia("(prefers-color-scheme: dark)").matches
         ? "dark"
         : "light"
-    );
+    ), 0);
   }, [ExecutionEnvironment.canUseDOM && localStorage.theme]);
 
   refreshDarkMode();
@@ -54,6 +48,7 @@ export default () => {
   };
 
   const background = theme === "light" ? "e1cce2" : "8b6eb0";
+  console.log('theme', `"${theme}"`, theme === 'dark', theme === 'light')
 
   return (
     <div className="flex-grow relative h-full bg-quible-lightest dark:bg-quible-darkest">
@@ -107,12 +102,13 @@ export default () => {
           >
             {theme === "light" && (
               <svg
+                key="light"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
                 strokeWidth="1.5"
                 stroke="currentColor"
-                class="size-6 dark:hidden w-[24px] h-[24px]"
+                class="size-6 w-[24px] h-[24px]"
               >
                 <path
                   strokeLinecap="round"
@@ -124,12 +120,13 @@ export default () => {
 
             {theme === "dark" && (
               <svg
+                key="dark"
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke-width="1.5"
                 stroke="currentColor"
-                class="size-6 text-quible-lightest hidden dark:block w-[24px] h-[24px]"
+                class="size-6 text-quible-lightest w-[24px] h-[24px]"
               >
                 <path
                   stroke-linecap="round"
@@ -138,6 +135,7 @@ export default () => {
                 />
               </svg>
             )}
+            foo
           </div>
         </div>
 
