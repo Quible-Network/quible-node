@@ -1008,6 +1008,12 @@ async fn main() -> anyhow::Result<()> {
         eprintln!("Error in propose_block: {:#?}", e);
     }
 
+    generate_intermediate_faucet_output(&QuibleRpcServerImpl {
+        db: db_arc.clone(),
+        node_signer_key: signing_key_decoded,
+    })
+    .await?;
+
     loop {
         select! {
             _ = sleep_until(block_timestamp + SLOT_DURATION) => {
