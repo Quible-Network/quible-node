@@ -80,7 +80,9 @@ pub struct CertificateSigningRequestDetails {
 impl Hashable for CertificateSigningRequestDetails {
     fn hash(&self) -> anyhow::Result<[u8; 32]> {
         let mut hasher = Keccak256::new();
-        postcard::to_io(&self, &mut hasher)?;
+        hasher.update(self.object_id);
+        hasher.update(&self.claim);
+        hasher.update(bytemuck::cast::<u64, [u8; 8]>(self.expires_at));
         let hash_vec = hasher.finalize();
         hash_vec
             .as_slice()
