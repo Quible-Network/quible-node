@@ -5,23 +5,7 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721Enumerable.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
 import "@quible/verifier-solidity-sdk/contracts/QuibleVerifier.sol";
-
-function bytesToHexString(bytes memory data) pure returns (string memory) {
-    bytes memory converted = new bytes(data.length * 2);
-
-    bytes memory _base = "0123456789abcdef";
-
-    for (uint256 i = 0; i < data.length; i++) {
-        converted[i * 2] = _base[uint8(data[i]) / _base.length];
-        converted[i * 2 + 1] = _base[uint8(data[i]) % _base.length];
-    }
-
-    return string(abi.encodePacked("0x", converted));
-}
 
 contract MyNFT is ERC721, ERC721Enumerable, Ownable {
     uint256 private _nextTokenId;
