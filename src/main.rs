@@ -139,9 +139,9 @@ impl ExecutionContext for QuibleBlockProposerExecutionContextImpl {
         transaction_hash: [u8; 32],
         error: anyhow::Error,
     ) -> anyhow::Result<()> {
-        dbg!(transaction_hash, error);
-
         let transaction_hash_hex = hex::encode(transaction_hash);
+
+        dbg!(transaction_hash_hex.clone(), error);
 
         self.db
             .query("DELETE FROM pending_transactions WHERE id = $id")
