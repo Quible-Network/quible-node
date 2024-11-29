@@ -224,11 +224,15 @@ async fn propose_block(
 ) -> anyhow::Result<BlockRow> {
     println!("preparing block {}", block_number);
 
-    let previous_block_header: Option<BlockHeader> = db_arc
-        .query("SELECT header FROM blocks WHERE height = $height")
-        .bind(("height", block_number - 1))
-        .await
-        .and_then(|mut response| response.take((0, "header")))?;
+    let previous_block_header: Option<BlockHeader> = if block_number > 0 {
+        db_arc
+            .query("SELECT header FROM blocks WHERE height = $height")
+            .bind(("height", block_number - 1))
+            .await
+            .and_then(|mut response| response.take((0, "header")))?
+    } else {
+        None
+    };
 
     let pending_transaction_rows: Vec<PendingTransactionRow> =
         db_arc.select("pending_transactions").await?;
