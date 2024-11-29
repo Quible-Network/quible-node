@@ -469,6 +469,28 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
         }
     }
 
+    async fn send_raw_transaction(&self, raw_transaction: String) -> Result<(), ErrorObjectOwned> {
+        let raw_transaction_vec = hex::decode(raw_transaction).map_err(|err| {
+            ErrorObjectOwned::owned::<String>(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to decode hexadecimal for transaction",
+                Some(err.to_string()),
+            )
+        })?;
+
+        let transaction_result = postcard::from_bytes(&raw_transaction_vec.as_slice());
+
+        let transaction = transaction_result.map_err(|err| {
+            ErrorObjectOwned::owned::<String>(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to decode transaction bytes",
+                Some(err.to_string()),
+            )
+        })?;
+
+        self.send_transaction(transaction).await
+    }
+
     async fn check_health(&self) -> Result<types::HealthCheckResponse, ErrorObjectOwned> {
         Ok(HealthCheckResponse {
             status: "healthy".to_string(),
