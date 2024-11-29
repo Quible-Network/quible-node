@@ -37,6 +37,7 @@ pub struct TransactionOutputRow {
     pub output: TransactionOutput,
     pub owner: String,
     pub spent: bool,
+    pub output_type: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

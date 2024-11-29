@@ -9,7 +9,6 @@ pub trait Hashable {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "version", content = "data")]
 pub enum BlockHeader {
     Version1 {
         previous_block_header_hash: [u8; 32],
@@ -75,7 +74,6 @@ pub struct ObjectIdentifier {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", content = "data")]
 pub enum TransactionOutput {
     Value {
         #[serde(with = "postcard::fixint::le")]
@@ -91,7 +89,6 @@ pub enum TransactionOutput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "version", content = "data")]
 pub enum Transaction {
     Version1 {
         inputs: Vec<TransactionInput>,

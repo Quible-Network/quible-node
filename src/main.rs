@@ -340,9 +340,9 @@ async fn propose_block(
         let transaction_hash_hex = hex::encode(transaction_hash);
 
         for (index, output) in outputs.iter().enumerate() {
-            let pubkey_script = match output {
-                TransactionOutput::Object { pubkey_script, .. } => pubkey_script,
-                TransactionOutput::Value { pubkey_script, .. } => pubkey_script,
+            let (output_type, pubkey_script) = match output {
+                TransactionOutput::Object { pubkey_script, .. } => ("Object", pubkey_script),
+                TransactionOutput::Value { pubkey_script, .. } => ("Value", pubkey_script),
             };
 
             let owner = match &pubkey_script[..] {
@@ -361,6 +361,7 @@ async fn propose_block(
                     ))),
                     transaction_hash: transaction_hash_hex.clone(),
                     output_index: index.try_into()?,
+                    output_type: output_type.to_string(),
                     output: output.clone(),
                     owner,
                     spent: false,
@@ -544,7 +545,7 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
     ) -> Result<ValueOutputsPayload, ErrorObjectOwned> {
         let owner_address_hex = hex::encode(owner_address);
         let result = self.db
-            .query("SELECT * FROM transaction_outputs WHERE owner = $owner AND spent = false AND output.type = \"Value\"")
+            .query("SELECT * FROM transaction_outputs WHERE owner = $owner AND spent = false AND output_type = \"Value\"")
             .bind(("owner", owner_address_hex))
             .await;
 
@@ -697,7 +698,7 @@ async fn generate_intermediate_faucet_output(
                 SELECT * FROM transaction_outputs\n\
                 WHERE owner = $owner\n\
                 AND spent = false\n\
-                AND output.type = \"Value\"\n\
+                AND output_type = \"Value\"\n\
                 AND count(<-spending<-intermediate_faucet_outputs) = 0
                 LIMIT 1",
         )
