@@ -44,3 +44,22 @@ export const convertHexStringToFixedLengthUint8Array = <N extends number>(
 
   return convertHexStringToUint8Array(hex) as Uint8Array & { length: N }
 }
+
+export const convertUint8ArrayToBigInt = (array: Uint8Array): bigint => {
+  let result = BigInt(0)
+  for (let i = 0; i < array.length; i++) {
+    result = (result << BigInt(8)) | BigInt(array[i])
+  }
+  return result
+}
+
+export const encodeUnsigned64BitIntegerLE = (value: bigint): Uint8Array => {
+  const array = new Uint8Array(8)
+
+  for (let i = 0; i < 8; i++) {
+    array[i] = Number(value & 0xffn) // Get the least significant byte
+    value >>= 8n // Shift right by 8 bits (1 byte)
+  }
+
+  return array
+}

@@ -3,7 +3,10 @@ import {
   TransactionContents,
   TransactionOpCode,
 } from './types'
-import { convertUint8ArrayToHexString } from './utils'
+import {
+  convertUint8ArrayToHexString,
+  encodeUnsigned64BitIntegerLE,
+} from './utils'
 
 export class EncodedTransaction {
   constructor(public raw: Uint8Array) {}
@@ -34,17 +37,6 @@ const encodeVarint = (value: bigint): Uint8Array => {
   } while (value > 0n)
 
   return new Uint8Array(result)
-}
-
-const encodeUnsigned64BitIntegerLE = (value: bigint): Uint8Array => {
-  const array = new Uint8Array(8)
-
-  for (let i = 0; i < 8; i++) {
-    array[i] = Number(value & 0xffn) // Get the least significant byte
-    value >>= 8n // Shift right by 8 bits (1 byte)
-  }
-
-  return array
 }
 
 const encodeOpCode = (opcode: TransactionOpCode): number[] => {
@@ -153,7 +145,7 @@ export const encodeTransaction = (transactionContents: TransactionContents) => {
         case 'Object':
           const encodedDataScript = encodeScript(output.data.dataScript)
           const encodedDataScriptLengthVarint = encodeVarint(
-            BigInt(encodedDataScript.length),
+            BigInt(output.data.dataScript.length),
           )
           return new Uint8Array([
             1,
