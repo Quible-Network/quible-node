@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::tx::types::{TransactionOutpoint, TransactionOutput};
+use crate::tx::types::{Transaction, TransactionOutpoint};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurrealID(pub surrealdb::sql::Thing);
@@ -91,12 +91,6 @@ pub struct QuirkleProof {
     pub member_address: String,
     pub expires_at: u64,
     pub signature: QuirkleSignature,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Transaction {
-    pub signature: ECDSASignature,
-    pub events: Vec<Event>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
