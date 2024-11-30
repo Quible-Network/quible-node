@@ -36,7 +36,10 @@ use tx::types::{
     BlockHeader, Hashable, ObjectIdentifier, ObjectMode, Transaction, TransactionInput,
     TransactionOpCode, TransactionOutpoint, TransactionOutput,
 };
-use types::{FaucetOutputPayload, HealthCheckResponse, ValueOutputEntry, ValueOutputsPayload};
+use types::{
+    BlockDetailsPayload, BlockHeightPayload, FaucetOutputPayload, HealthCheckResponse,
+    ValueOutputEntry, ValueOutputsPayload,
+};
 
 use rpc::QuibleRpcServer;
 
@@ -693,6 +696,77 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
                 None as Option<String>,
             )),
         }
+    }
+
+    async fn get_block_height(&self) -> Result<BlockHeightPayload, ErrorObjectOwned> {
+        let Some(block_height) = self
+            .db
+            .query("SELECT height FROM blocks ORDER BY height DESC LIMIT 1")
+            .await
+            .and_then(|mut response| response.take((0, "height")))
+            .map_err(|err| {
+                ErrorObjectOwned::owned(
+                    CALL_EXECUTION_FAILED_CODE,
+                    "call execution failed: database query error",
+                    Some(err.to_string()),
+                )
+            })?
+        else {
+            return Err(ErrorObjectOwned::owned(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: no blocks",
+                None as Option<String>,
+            ));
+        };
+
+        Ok(BlockHeightPayload {
+            height: block_height,
+        })
+    }
+
+    async fn get_block_by_height(
+        &self,
+        height_payload: BlockHeightPayload,
+    ) -> Result<BlockDetailsPayload, ErrorObjectOwned> {
+        let Some(block_row): Option<BlockRow> = self
+            .db
+            .query("SELECT * FROM blocks WHERE height = $height LIMIT 1")
+            .bind(("height", height_payload.height))
+            .await
+            .and_then(|mut response| response.take(0))
+            .map_err(|err| {
+                ErrorObjectOwned::owned(
+                    CALL_EXECUTION_FAILED_CODE,
+                    "call execution failed: database query error",
+                    Some(err.to_string()),
+                )
+            })?
+        else {
+            return Err(ErrorObjectOwned::owned(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to find block",
+                None as Option<String>,
+            ));
+        };
+
+        let mut block_hash = [0u8; 32];
+
+        hex::decode_to_slice(block_row.hash, &mut block_hash).map_err(|err| {
+            ErrorObjectOwned::owned(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to decode block hash",
+                Some(err.to_string()),
+            )
+        })?;
+
+        let block_details = BlockDetailsPayload {
+            hash: block_hash,
+            height: height_payload.height,
+            header: block_row.header,
+            transaction_count: block_row.transactions.len() as u64,
+        };
+
+        Ok(block_details)
     }
 }
 
