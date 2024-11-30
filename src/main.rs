@@ -139,9 +139,9 @@ impl ExecutionContext for QuibleBlockProposerExecutionContextImpl {
         transaction_hash: [u8; 32],
         error: anyhow::Error,
     ) -> anyhow::Result<()> {
-        dbg!(transaction_hash, error);
-
         let transaction_hash_hex = hex::encode(transaction_hash);
+
+        dbg!(transaction_hash_hex.clone(), error);
 
         self.db
             .query("DELETE FROM pending_transactions WHERE id = $id")
@@ -224,11 +224,15 @@ async fn propose_block(
 ) -> anyhow::Result<BlockRow> {
     println!("preparing block {}", block_number);
 
-    let previous_block_header: Option<BlockHeader> = db_arc
-        .query("SELECT header FROM blocks WHERE height = $height")
-        .bind(("height", block_number - 1))
-        .await
-        .and_then(|mut response| response.take((0, "header")))?;
+    let previous_block_header: Option<BlockHeader> = if block_number > 0 {
+        db_arc
+            .query("SELECT header FROM blocks WHERE height = $height")
+            .bind(("height", block_number - 1))
+            .await
+            .and_then(|mut response| response.take((0, "header")))?
+    } else {
+        None
+    };
 
     let pending_transaction_rows: Vec<PendingTransactionRow> =
         db_arc.select("pending_transactions").await?;
@@ -340,9 +344,9 @@ async fn propose_block(
         let transaction_hash_hex = hex::encode(transaction_hash);
 
         for (index, output) in outputs.iter().enumerate() {
-            let pubkey_script = match output {
-                TransactionOutput::Object { pubkey_script, .. } => pubkey_script,
-                TransactionOutput::Value { pubkey_script, .. } => pubkey_script,
+            let (output_type, pubkey_script) = match output {
+                TransactionOutput::Object { pubkey_script, .. } => ("Object", pubkey_script),
+                TransactionOutput::Value { pubkey_script, .. } => ("Value", pubkey_script),
             };
 
             let owner = match &pubkey_script[..] {
@@ -361,6 +365,7 @@ async fn propose_block(
                     ))),
                     transaction_hash: transaction_hash_hex.clone(),
                     output_index: index.try_into()?,
+                    output_type: output_type.to_string(),
                     output: output.clone(),
                     owner,
                     spent: false,
@@ -464,6 +469,28 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
         }
     }
 
+    async fn send_raw_transaction(&self, raw_transaction: String) -> Result<(), ErrorObjectOwned> {
+        let raw_transaction_vec = hex::decode(raw_transaction).map_err(|err| {
+            ErrorObjectOwned::owned::<String>(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to decode hexadecimal for transaction",
+                Some(err.to_string()),
+            )
+        })?;
+
+        let transaction_result = postcard::from_bytes(&raw_transaction_vec.as_slice());
+
+        let transaction = transaction_result.map_err(|err| {
+            ErrorObjectOwned::owned::<String>(
+                CALL_EXECUTION_FAILED_CODE,
+                "call execution failed: failed to decode transaction bytes",
+                Some(err.to_string()),
+            )
+        })?;
+
+        self.send_transaction(transaction).await
+    }
+
     async fn check_health(&self) -> Result<types::HealthCheckResponse, ErrorObjectOwned> {
         Ok(HealthCheckResponse {
             status: "healthy".to_string(),
@@ -544,7 +571,7 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
     ) -> Result<ValueOutputsPayload, ErrorObjectOwned> {
         let owner_address_hex = hex::encode(owner_address);
         let result = self.db
-            .query("SELECT * FROM transaction_outputs WHERE owner = $owner AND spent = false AND output.type = \"Value\"")
+            .query("SELECT * FROM transaction_outputs WHERE owner = $owner AND spent = false AND output_type = \"Value\"")
             .bind(("owner", owner_address_hex))
             .await;
 
@@ -697,7 +724,7 @@ async fn generate_intermediate_faucet_output(
                 SELECT * FROM transaction_outputs\n\
                 WHERE owner = $owner\n\
                 AND spent = false\n\
-                AND output.type = \"Value\"\n\
+                AND output_type = \"Value\"\n\
                 AND count(<-spending<-intermediate_faucet_outputs) = 0
                 LIMIT 1",
         )
@@ -1002,6 +1029,12 @@ async fn main() -> anyhow::Result<()> {
     if let Err(e) = result {
         eprintln!("Error in propose_block: {:#?}", e);
     }
+
+    generate_intermediate_faucet_output(&QuibleRpcServerImpl {
+        db: db_arc.clone(),
+        node_signer_key: signing_key_decoded,
+    })
+    .await?;
 
     loop {
         select! {

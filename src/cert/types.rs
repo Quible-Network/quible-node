@@ -1,6 +1,7 @@
 use alloy_primitives::{FixedBytes, B256};
 use anyhow::anyhow;
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
 use sha3::{Digest, Keccak256};
 
 use crate::{quible_ecdsa_utils::sign_message, tx::types::Hashable};
@@ -66,17 +67,22 @@ impl<'de> Deserialize<'de> for QuibleSignature {
     }
 }
 
+#[serde_as]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CertificateSigningRequestDetails {
     pub object_id: [u8; 32],
     pub claim: Vec<u8>,
+
+    #[serde_as(as = "DisplayFromStr")]
     pub expires_at: u64,
 }
 
 impl Hashable for CertificateSigningRequestDetails {
     fn hash(&self) -> anyhow::Result<[u8; 32]> {
         let mut hasher = Keccak256::new();
-        postcard::to_io(&self, &mut hasher)?;
+        hasher.update(self.object_id);
+        hasher.update(&self.claim);
+        hasher.update(bytemuck::cast::<u64, [u8; 8]>(self.expires_at));
         let hash_vec = hasher.finalize();
         hash_vec
             .as_slice()

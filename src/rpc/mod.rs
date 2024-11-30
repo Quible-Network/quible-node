@@ -14,6 +14,9 @@ pub trait QuibleRpc {
     #[method(name = "sendTransaction")]
     async fn send_transaction(&self, transaction: Transaction) -> Result<(), ErrorObjectOwned>;
 
+    #[method(name = "sendRawTransaction")]
+    async fn send_raw_transaction(&self, raw_transaction: String) -> Result<(), ErrorObjectOwned>;
+
     #[method(name = "checkHealth")]
     async fn check_health(&self) -> Result<types::HealthCheckResponse, ErrorObjectOwned>;
 

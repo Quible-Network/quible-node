@@ -77,15 +77,13 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
             let mut output_value = 0u64;
 
             for (
-                index,
+                _index,
                 TransactionInput {
                     outpoint,
                     signature_script,
                 },
             ) in inputs.iter().enumerate()
             {
-                dbg!(index, signature_script, spent_outpoints.len());
-
                 if spent_outpoints.contains(&outpoint.clone()) {
                     // TODO: serialize outpoint details for error message
                     return Err(anyhow!("cannot spend output twice"));
@@ -134,12 +132,12 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
                             match (left_maybe, right_maybe) {
                                 (Some(left), Some(right)) => {
                                     if left != right {
-                                        return Err(anyhow!("pubkey script failed"));
+                                        return Err(anyhow!("pubkey script failed: EQUALVERIFY"));
                                     }
                                 }
 
                                 _ => {
-                                    return Err(anyhow!("pubkey script failed"));
+                                    return Err(anyhow!("pubkey script failed: EQUALVERIFY"));
                                 }
                             }
                         }
@@ -181,7 +179,9 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
                                 }
 
                                 _ => {
-                                    return Err(anyhow!("pubkey script failed"));
+                                    return Err(anyhow!(
+                                        "pubkey script failed: CHECKSIGVERIFY when stack is empty"
+                                    ));
                                 }
                             }
                         }
@@ -200,8 +200,6 @@ pub async fn collect_valid_block_transactions<C: ExecutionContext>(
             }
 
             for (index, output) in outputs.iter().enumerate() {
-                dbg!(index, output);
-
                 match output {
                     TransactionOutput::Value { value, .. } => {
                         output_value += value;
@@ -351,7 +349,6 @@ mod tests {
                 return Err(anyhow!("cannot spend output twice"));
             }
 
-            dbg!(&self.transaction_map, &outpoint.txid);
             let transaction = self
                 .transaction_map
                 .get(&outpoint.txid)
@@ -617,7 +614,10 @@ mod tests {
         let failure_count = failure_context.failed_transactions.len();
         assert_eq!(failure_count, 1);
         let err = &failure_context.failed_transactions.get(0).unwrap().1;
-        assert_eq!(format!("{}", err.root_cause()), "pubkey script failed");
+        assert_eq!(
+            format!("{}", err.root_cause()),
+            "pubkey script failed: EQUALVERIFY"
+        );
 
         let mut context = create_subcontext(true)?;
 

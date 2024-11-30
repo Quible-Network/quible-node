@@ -31,10 +31,12 @@ pub async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
         .await?;
     db.query("DEFINE FIELD data ON pending_transactions TYPE object;")
         .await?;
-    db.query("DEFINE FIELD data.version ON pending_transactions TYPE string;")
+    db.query("DEFINE FIELD data ON pending_transactions FLEXIBLE TYPE object;")
         .await?;
-    db.query("DEFINE FIELD data.data ON pending_transactions FLEXIBLE TYPE object;")
-        .await?;
+    // db.query("DEFINE FIELD data.version ON pending_transactions TYPE string;")
+    // .await?;
+    // db.query("DEFINE FIELD data.data ON pending_transactions FLEXIBLE TYPE object;")
+    // .await?;
     // db.query("DEFINE FIELD data.data.inputs ON pending_transactions TYPE array;").await?;
     // db.query("DEFINE FIELD data.data.outputs ON pending_transactions TYPE array;").await?;
     // db.query("DEFINE FIELD data.data.locktime ON pending_transactions TYPE int;").await?;
@@ -77,6 +79,8 @@ pub async fn initialize_db(db: &Surreal<AnyDb>) -> surrealdb::Result<()> {
     db.query("DEFINE FIELD output_index ON transaction_outputs TYPE int;")
         .await?;
     db.query("DEFINE FIELD output ON transaction_outputs FLEXIBLE TYPE object;")
+        .await?;
+    db.query("DEFINE FIELD output_type ON transaction_outputs TYPE string;")
         .await?;
     db.query("DEFINE FIELD owner ON transaction_outputs TYPE string;")
         .await?;
