@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DisplayFromStr};
 
-use crate::tx::types::{Transaction, TransactionOutpoint};
+use crate::tx::types::{BlockHeader, Transaction, TransactionOutpoint};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SurrealID(pub surrealdb::sql::Thing);
@@ -231,4 +232,22 @@ pub struct FaucetOutputPayload {
     pub outpoint: TransactionOutpoint,
     pub value: u64,
     pub owner_signing_key: [u8; 32],
+}
+
+#[serde_as]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockHeightPayload {
+    #[serde_as(as = "DisplayFromStr")]
+    pub height: u64,
+}
+
+#[serde_as]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockDetailsPayload {
+    pub hash: [u8; 32],
+    #[serde_as(as = "DisplayFromStr")]
+    pub height: u64,
+    pub header: BlockHeader,
+    #[serde_as(as = "DisplayFromStr")]
+    pub transaction_count: u64,
 }
