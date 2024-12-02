@@ -61,7 +61,7 @@ export default () => {
             Docs
           </Link>
           <a
-            href="https://quible.s3.amazonaws.com/whitepaper.pdf"
+            href="https://ts.docsend.com/view/5xyq5v7burxnmkib"
             className="font-bold text-quible-darkest dark:text-quible-lightest p-5 hover:text-quible-medium dark:hover:text-quible-mild active:text-quible-mildest dark:active:text-quible-heavier hover:shadow-[inset_0_0_0_100px_#d9c3de] dark:hover:shadow-[inset_0_0_0_100px_#9073b3]"
             target="_blank"
           >

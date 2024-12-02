@@ -1,10 +1,13 @@
 import Link from "@docusaurus/Link";
 import Logo from "../../static/img/logo.svg";
-import ExecutionEnvironment from '@docusaurus/ExecutionEnvironment';
+import ExecutionEnvironment from "@docusaurus/ExecutionEnvironment";
 
 const refreshDarkMode = () => {
   if (ExecutionEnvironment.canUseDOM) {
-    const isDark = localStorage.theme === "dark" || (!("theme" in localStorage) && window.matchMedia("(prefers-color-scheme: dark)").matches)
+    const isDark =
+      localStorage.theme === "dark" ||
+      (!("theme" in localStorage) &&
+        window.matchMedia("(prefers-color-scheme: dark)").matches);
 
     if (isDark) {
       document.documentElement.classList.add("dark");
@@ -17,7 +20,7 @@ const refreshDarkMode = () => {
 refreshDarkMode();
 
 export default () => {
-  setTimeout(() => refreshDarkMode(), 0)
+  setTimeout(() => refreshDarkMode(), 0);
 
   return (
     <div className="flex-grow relative h-full flex flex-col items-center justify-center text-xs dark:bg-black dark:text-white leading-4">
@@ -77,7 +80,7 @@ export default () => {
         {" | "}
         <a
           className="!text-[blue] dark:!text-blue-300 font-bold underline"
-          href="https://quible.s3.amazonaws.com/whitepaper.pdf"
+          href="https://ts.docsend.com/view/5xyq5v7burxnmkib"
           target="_blank"
         >
           WHITEPAPER
