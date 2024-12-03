@@ -221,21 +221,20 @@ async fn digest_object_output(
 }
 
 async fn propose_block(
-    block_number: u64,
     db_arc: &Arc<Surreal<AnyDb>>,
     node_signing_key: &SigningKey,
 ) -> anyhow::Result<BlockRow> {
-    println!("preparing block {}", block_number);
+    let previous_block_row: Option<BlockRow> = db_arc
+        .query("SELECT * FROM blocks ORDER BY height DESC LIMIT 1")
+        .await
+        .and_then(|mut response| response.take(0))?;
 
-    let previous_block_header: Option<BlockHeader> = if block_number > 0 {
-        db_arc
-            .query("SELECT header FROM blocks WHERE height = $height")
-            .bind(("height", block_number - 1))
-            .await
-            .and_then(|mut response| response.take((0, "header")))?
-    } else {
-        None
-    };
+    let block_number = previous_block_row
+        .clone()
+        .map(|row| row.height + 1)
+        .unwrap_or(0);
+
+    println!("preparing block {}", block_number);
 
     let pending_transaction_rows: Vec<PendingTransactionRow> =
         db_arc.select("pending_transactions").await?;
@@ -261,7 +260,8 @@ async fn propose_block(
 
     collect_valid_block_transactions(&mut execution_context).await?;
 
-    let previous_block_header_hash = previous_block_header.map_or(Ok([0u8; 32]), |h| h.hash())?;
+    let previous_block_header_hash =
+        previous_block_row.map_or(Ok([0u8; 32]), |row| row.header.hash())?;
 
     let block_header = BlockHeader::Version1 {
         previous_block_header_hash,
@@ -341,6 +341,8 @@ async fn propose_block(
         .content(block_row.clone())
         .await?;
 
+    println!("inserted block {}", block_number);
+
     for (transaction_hash, transaction) in transactions {
         let Transaction::Version1 { outputs, .. } = transaction;
 
@@ -399,6 +401,8 @@ async fn propose_block(
             ))
             .await?;
     }
+
+    println!("digested block {}", block_number);
 
     Ok(block_row)
 }
@@ -1058,7 +1062,6 @@ async fn main() -> anyhow::Result<()> {
     let url = format!("http://{}", server_addr);
     println!("server listening at {}", url);
 
-    let mut block_number = 0u64;
     let mut block_timestamp = Instant::now();
 
     let keypair: libp2p_identity::ecdsa::Keypair =
@@ -1098,7 +1101,7 @@ async fn main() -> anyhow::Result<()> {
         _ => {}
     }
 
-    let result = propose_block(block_number, &db_arc, &signing_key).await;
+    let result = propose_block(&db_arc, &signing_key).await;
 
     if let Err(e) = result {
         eprintln!("Error in propose_block: {:#?}", e);
@@ -1114,9 +1117,8 @@ async fn main() -> anyhow::Result<()> {
         select! {
             _ = sleep_until(block_timestamp + SLOT_DURATION) => {
                 block_timestamp = block_timestamp + SLOT_DURATION;
-                block_number += 1;
 
-                let result = propose_block(block_number, &db_arc, &signing_key).await;
+                let result = propose_block(&db_arc, &signing_key).await;
 
                 if let Err(e) = result {
                     eprintln!("Error in propose_block: {:#?}", e);
@@ -1244,7 +1246,7 @@ mod tests {
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
 
-        propose_block(1, &db_arc, &node_signing_key).await?;
+        propose_block(&db_arc, &node_signing_key).await?;
 
         // Query pending transactions from SurrealDB
         let block_rows: Vec<BlockRow> = db_arc.select("blocks").await?;
@@ -1312,7 +1314,7 @@ mod tests {
             .await
             .unwrap();
 
-        propose_block(1, &db_arc, &node_signing_key).await?;
+        propose_block(&db_arc, &node_signing_key).await?;
 
         // Query pending transactions from SurrealDB
         let block_rows: Vec<BlockRow> = db_arc.select("blocks").await?;
@@ -1364,7 +1366,7 @@ mod tests {
         let url = format!("http://{}", server_addr);
         println!("server listening at {}", url);
 
-        let block_row = propose_block(1, &db_arc, &node_signing_key).await?;
+        let block_row = propose_block(&db_arc, &node_signing_key).await?;
 
         let coinbase_transaction_hash = match &block_row.transactions[..] {
             [(hash, _)] => Ok(*hash),
@@ -1419,7 +1421,7 @@ mod tests {
             .await
             .unwrap();
 
-        propose_block(2, &db_arc, &node_signing_key).await?;
+        propose_block(&db_arc, &node_signing_key).await?;
 
         // Query pending transactions from SurrealDB
         let mut result = db_arc
@@ -1502,7 +1504,7 @@ mod tests {
             .await
             .unwrap();
 
-        propose_block(1, &db_arc, &node_signing_key).await?;
+        propose_block(&db_arc, &node_signing_key).await?;
 
         // Query pending transactions from SurrealDB
         let block_rows: Vec<BlockRow> = db_arc.select("blocks").await?;
@@ -1584,7 +1586,7 @@ mod tests {
 
         client.send_transaction(sample_transaction.clone()).await?;
 
-        propose_block(1, &db_arc, &server_signing_key).await?;
+        propose_block(&db_arc, &server_signing_key).await?;
 
         let cert = client
             .request_certificate(object_id_raw, vec![1, 2, 3])
@@ -1641,7 +1643,7 @@ mod tests {
 
         client.send_transaction(sample_transaction.clone()).await?;
 
-        propose_block(1, &db_arc, &server_signing_key).await?;
+        propose_block(&db_arc, &server_signing_key).await?;
 
         let failure_response = client
             .request_certificate(object_id_raw, vec![4, 5, 6])
@@ -1683,7 +1685,7 @@ mod tests {
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
 
-        let block_row = propose_block(1, &db_arc, &server_signing_key).await?;
+        let block_row = propose_block(&db_arc, &server_signing_key).await?;
 
         let coinbase_transaction_hash = match &block_row.transactions[..] {
             [(hash, _)] => Ok(*hash),
@@ -1741,7 +1743,7 @@ mod tests {
 
         client.send_transaction(sample_transaction.clone()).await?;
 
-        propose_block(2, &db_arc, &server_signing_key).await?;
+        propose_block(&db_arc, &server_signing_key).await?;
 
         let payload = client
             .fetch_unspent_value_outputs_by_owner(user_address.into_array())
@@ -1791,7 +1793,7 @@ mod tests {
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
 
-        let _ = propose_block(1, &db_arc, &server_signer_key).await?;
+        let _ = propose_block(&db_arc, &server_signer_key).await?;
 
         let result = client.request_faucet_output().await;
 
@@ -1830,7 +1832,7 @@ mod tests {
         println!("server listening at {}", url);
         let client = HttpClient::builder().build(url)?;
 
-        let _ = propose_block(1, &db_arc, &server_signer_key).await?;
+        let _ = propose_block(&db_arc, &server_signer_key).await?;
 
         generate_intermediate_faucet_output(&QuibleRpcServerImpl {
             db: db_arc.clone(),
@@ -1840,7 +1842,7 @@ mod tests {
 
         // extra block proposal ensures that the
         // intermediate transaction is executed
-        let _ = propose_block(2, &db_arc, &server_signer_key).await?;
+        let _ = propose_block(&db_arc, &server_signer_key).await?;
 
         let faucet_payload = client.request_faucet_output().await?;
 
@@ -1893,7 +1895,7 @@ mod tests {
 
         client.send_transaction(sample_transaction.clone()).await?;
 
-        propose_block(3, &db_arc, &server_signer_key).await?;
+        propose_block(&db_arc, &server_signer_key).await?;
 
         let payload = client
             .fetch_unspent_value_outputs_by_owner(faucet_user_address.into_array())
