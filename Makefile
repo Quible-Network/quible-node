@@ -12,8 +12,10 @@ all:
 
 .PHONY: leader
 leader:
+	QUIBLE_SIGNER_KEY=ac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80 \
+	QUIBLE_DATABASE_URL=ws://localhost:8000 \
 	cargo run \
-		--features surrealdb/kv-mem \
+		--features surrealdb/protocol-ws \
 		--bin quible-node
 
 .PHONY: follower
