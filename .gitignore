@@ -1,5 +1,6 @@
 /target
 out/
 /data/
-
+*/bun.lockb
 .DS_Store
+.env

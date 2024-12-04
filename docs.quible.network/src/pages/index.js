@@ -56,10 +56,10 @@ export default () => {
         {"|  ==============                                |\n"}
         {"|                                                |\n"}
         {"|                                                |\n"}
-        {"|  The decentralized certificate authority       |\n"}
-        {"|  supporting zero-knowledge certificates,       |\n"}
-        {"|  blockchain-based identity management          |\n"}
-        {"|  and more.                                     |\n"}
+        {"|  The decentralized security infrastructure     |\n"}
+        {"|  marketplace, powered by zero-knowledge        |\n"}
+        {"|  certificates, blockchain-based identity       |\n"}
+        {"|  management, and more.                         |\n"}
         {"|                                                |\n"}
         {"|                                                |\n"}
         {"|  ------------------------------------          |\n"}

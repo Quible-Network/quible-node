@@ -140,12 +140,12 @@ export default () => {
                 Quible
               </div>
             </div>
-            <h1 className="text-quible-heaviest dark:text-quible-lighter text-4xl sm:text-5xl my-5 leading-normal">
-              The decentralized certificate authority.
+            <h1 className="text-quible-heaviest dark:text-quible-lighter text-4xl sm:text-3xl my-5 leading-normal">
+              The decentralized security infrastructure marketplace.
             </h1>
             <p className="text-quible-heaviest dark:text-quible-lighter text-2xl font-medium">
-              Quible is the first dedicated L1 providing onchain attestations in
-              real-time.
+              No more vendor lock-in. Build identity-native security with any
+              application.
             </p>
             <a
               href="https://t.me/quiblealpha"
@@ -159,14 +159,16 @@ export default () => {
             <div className="px-10 py-16 ml-10 xl:ml-20 mr-10 my-5 bg-quible-lighter text-quible-deepest dark:text-quible-lightest dark:bg-quible-deepest">
               <h1 className="text-4xl font-bold pb-5">Problem</h1>
               <div className="text-sm font-mono font-bold">
-                Traditional certificate authorities are only useful for
-                traditional DNS use-cases.
+                Identity-aware security infrastructure is the state-of-the-art,
+                but many applications are unable to implement it with their
+                existing cloud provider.
               </div>
               <div className="my-16 h-px w-full bg-quible-deepest dark:bg-quible-lightest"></div>
               <h1 className="text-4xl font-bold pb-5">Solution</h1>
               <div className="text-sm font-mono font-bold">
-                A decentralized certificate authority with blockchain-based
-                identity management, zero-knowledge certificates and more.
+                Quible enables a marketplace where application developers can
+                purchase from security infrastructure providers and easily
+                switch or combine providers when they discover better options.
               </div>
             </div>
           </div>
@@ -193,16 +195,17 @@ export default () => {
             <div className="relative z-1 text-quible-black dark:text-quible-white max-w-5xl py-96">
               <h1 className="font-normal p-10 bg-quible-lightest dark:bg-quible-darkest text-3xl md:text-5xl leading-relaxed md:leading-snug mx-10">
                 <span className="text-quible-deep dark:text-quible-mildest">
-                  Centralized certificate authorities are expensive and
-                  inflexible. Quible gives you
+                  Centralized providers dominate security infrastructure, but
+                  their IAM tools are inflexible. We deliver provider-agnostic
+                  IAM at
                 </span>{" "}
-                programmability{" "}
+                lower latency{" "}
                 <span className="text-quible-deep dark:text-quible-mildest">
                   and
                 </span>{" "}
-                cost-efficiency,{" "}
+                higher scale{" "}
                 <span className="text-quible-deep dark:text-quible-mildest">
-                  all in a single integration.
+                  than anything on the market.
                 </span>
               </h1>
             </div>
@@ -218,21 +221,21 @@ export default () => {
                 Integrate in just a few lines of code
               </h1>
               <div>
-                With Quible, you can forget about complex and costly certificate
-                configuration.
+                With Quible, you can forget about configuring complex and costly
+                security services.
               </div>
               <div className="border border-solid border-quible-medium w-full grid grid-cols-1 sm:grid-cols-2">
                 <div className="w-full flex-grow flex-shrink-0 basis-1 border-b border-r-0 border-t-0 border-l-0 sm:border-b-0 sm:border-r border-solid border-quible-medium p-10 text-quible-black text-xl dark:text-quible-white">
                   <span className="font-mono text-quible-darker dark:text-quible-lighter pr-5">
                     01
                   </span>
-                  Issue digital certificates at scale
+                  Authenticate with certificates at scale
                 </div>
                 <div className="w-full flex-grow flex-shrink-0 basis-1 p-10 text-quible-black dark:text-quible-white text-xl">
                   <span className="font-mono text-quible-darker dark:text-quible-lighter pr-5">
                     02
                   </span>
-                  Verify authenticity in real-time
+                  Only pay for the traffic you consume
                 </div>
               </div>
             </div>
@@ -247,10 +250,13 @@ export default () => {
               <h1 className="font-normal bg-quible-lightest dark:bg-quible-darkest text-3xl md:text-5xl leading-relaxed md:leading-snug">
                 State of the art security
               </h1>
-              <div>Leave behind single-point-of-failure traditional CAs.</div>
+              <div>
+                Get the best of both worlds. Leverage industry-leading security
+                while supporting identity-aware protection.
+              </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                 <div className="w-full flex-grow flex-shrink-0 basis-1 p-10 text-quible-black text-xl dark:text-quible-white bg-quible-lighter dark:bg-quible-darker space-y-10">
-                  <div className="text-center">Unprecented Dedication</div>
+                  <div className="text-center">Unprecented Design</div>
                   <div className="text-sm text-quible-darkest dark:text-quible-lighter">
                     Quible is implemented as a Layer 1 blockchain with custom
                     opcodes and architecture design, optimized for certificate
@@ -268,7 +274,7 @@ export default () => {
                   <div className="text-center">Unlimited Scalability</div>
                   <div className="text-sm text-quible-darkest dark:text-quible-lighter">
                     Quible can support networks with hundreds of thousands or
-                    even millions of machines, and has integration support
+                    even millions of identities, and has integration support
                     across hundreds of verticals.
                   </div>
                 </div>
@@ -286,29 +292,35 @@ export default () => {
                 Built for the future
               </h1>
               <div>
-                The internet of machines is expanding, and Quible is here to
-                support you every step of the way.
+                Security infrastructure is a commodity, and Quible&rsquo;s
+                marketplace lets you trade it like one.
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
                 <div className="w-full flex-grow flex-shrink-0 basis-1 p-10 text-quible-black text-xl dark:text-quible-white bg-quible-lighter dark:bg-quible-darker space-y-10">
-                  <div className="text-center">Node Sales</div>
+                  <div className="text-center">IAM</div>
                   <div className="text-sm text-quible-darkest dark:text-quible-lighter">
-                    Prove license ownership
+                    Made possible by our certificate authority, applications pay
+                    small fees to manage identities and utilize Quible&rsquo;s
+                    open-source tooling to implement flexible access control.
                   </div>
                 </div>
                 <div className="w-full flex-grow flex-shrink-0 basis-1 p-10 text-quible-black text-xl dark:text-quible-white bg-quible-lighter dark:bg-quible-darker space-y-10">
-                  <div className="text-center">DePIN</div>
+                  <div className="text-center">Authentication</div>
                   <div className="text-sm text-quible-darkest dark:text-quible-lighter">
-                    Verify machine authenticity
+                    Quible&rsquo;s authentication marketplace allows vendors to
+                    provide externally-hosted authentication layers supporting
+                    OAuth 2.0 and MFA with seamless Quible IAM integration.
                   </div>
                 </div>
                 <div className="w-full flex-grow flex-shrink-0 basis-1 p-10 text-quible-black text-xl dark:text-quible-white bg-quible-lighter dark:bg-quible-darker space-y-10">
-                  <div className="text-center">Connected Cars</div>
+                  <div className="text-center">DDoS Protection</div>
                   <div className="text-sm text-quible-darkest dark:text-quible-lighter">
-                    Support offline, manufactuer-agnostic V2V communication
+                    A fair market where developers can buy flexible,
+                    identity-aware protection, while providers can profitably
+                    resell attack mitigation services from industry leaders.
                   </div>
                 </div>
-                <div className="w-full flex-grow flex-shrink-0 basis-1 p-10 text-quible-black text-xl dark:text-quible-white bg-quible-lighter dark:bg-quible-darker space-y-10">
+                {/* <div className="w-full flex-grow flex-shrink-0 basis-1 p-10 text-quible-black text-xl dark:text-quible-white bg-quible-lighter dark:bg-quible-darker space-y-10">
                   <div className="text-center">AI Agents</div>
                   <div className="text-sm text-quible-darkest dark:text-quible-lighter">
                     Secure large fleets of connected machines executing tasks
@@ -325,7 +337,7 @@ export default () => {
                   <div className="text-sm text-quible-darkest dark:text-quible-lighter">
                     Quible can flexibly integrate anywhere, anytime
                   </div>
-                </div>
+                </div> */}
               </div>
             </div>
           </div>
