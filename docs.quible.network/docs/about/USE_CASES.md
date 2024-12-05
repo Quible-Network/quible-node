@@ -18,7 +18,7 @@ Quible helps these developers by providing off-the-shelf authentication tools wh
 
 Distributed Denial-of-Service (DDoS) attacks are one of the most common vulnerabilities in modern applications. Broadly speaking, to orchestrate a DDoS attack, a malicious actor sends a large volume of requests in rapid succession to an application, forcing the application's servers to process these malicious requests instead of genuine user requests. This results in "effective downtime," wherein users' requests are enqueued but remain unprocessed while the server is processing the attacker's stream of requests.
 
-Major cloud infrastructure providers including AWS, GCP, Microsoft Azure, and Cloudflare have dedicated DDoS protection services, which often involve a network of self-hosted machines that act as a filtering layer between an application and incoming requests. This filter identities potentially malicious requests and rejects them, ensuring that the servers under this layer have enough capacity to process genuine requests.
+Major cloud infrastructure providers including AWS, GCP, Microsoft Azure, and Cloudflare have dedicated DDoS protection services, which often involve a network of self-hosted machines that act as a filtering layer between an application and incoming requests. This filter identifies potentially malicious requests and rejects them, ensuring that the servers under this layer have enough capacity to process genuine requests.
 
 Identity-native DDoS protection refers to the ability of a filtering layer (technically known as a "reverse proxy") to know the identity of the sender of a given incoming request. With this knowledge, the proxy can better ensure that the requests to which it allocates the servers' resources are genuine.
 
