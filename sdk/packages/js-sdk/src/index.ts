@@ -4,6 +4,7 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { EIP191Signer } from '@lukso/eip191-signer.js'
 import { RawSignedTransaction, Signer } from './signing'
 import {
+  convertHexStringToFixedLengthUint8Array,
   convertHexStringToUint8Array,
   convertUint8ArrayToBigInt,
   convertUint8ArrayToHexString,
@@ -14,22 +15,22 @@ import {
   TransactionOpCode,
   TransactionOutpoint,
 } from './types'
+import { encodeTransaction } from './encoding'
 
 const eip191Signer = new EIP191Signer()
 
-export class Identity {
-  public id: { toBytes: () => Uint8Array; toHexString: () => string }
+export type QuibleClaim = { hex: string } | { raw: Uint8Array } | string
 
-  constructor(id: Uint8Array) {
-    this.id = {
-      toBytes() {
-        return id
-      },
-      toHexString() {
-        return convertUint8ArrayToHexString(id)
-      },
-    }
-  }
+export type QuibleIdentityUpdateParams = {
+  wallet: QuibleWallet
+  insert?: QuibleClaim[]
+  delete?: QuibleClaim[]
+  certificateLifespan?: bigint
+}
+
+export type IdentityId = {
+  toBytes: () => Uint8Array & { length: 32 }
+  toHexString: () => string
 }
 
 export type CreateIdentityParams = {
@@ -113,6 +114,169 @@ export class QuibleProvider {
 
     return { signer, signingKey, outpoint }
   }
+
+  async fetchOutputsByObjectId(objectId: Uint8Array & { length: 32 }): Promise<{
+    outpoint: TransactionOutpoint
+  }> {
+    const response = await fetch(this.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'quible_getUnspentObjectOutputsByObjectId',
+        id: 67,
+        params: [objectId],
+      }),
+    })
+
+    const { result } = await response.json()
+
+    if (result.outpoints.length === 0) {
+      throw new Error('failed to fetch outputs by object id: no outputs')
+    }
+
+    const outpoint: TransactionOutpoint = {
+      txid: new Uint8Array(result.outpoints[0].txid) as Uint8Array & {
+        length: 32
+      },
+      index: convertUint8ArrayToBigInt(result.outpoints[0].index),
+    }
+
+    return { outpoint }
+  }
+
+  async fetchClaimsByObjectId(objectId: Uint8Array & { length: 32 }): Promise<{
+    claims: Uint8Array[]
+  }> {
+    const response = await fetch(this.url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'quible_getClaimsByObjectId',
+        id: 67,
+        params: [objectId],
+      }),
+    })
+
+    const {
+      result: { claims },
+    } = await response.json()
+
+    return { claims }
+  }
+}
+
+export type GetCertificateParams = {
+  claims: QuibleClaim[]
+}
+
+export class Identity {
+  public id: IdentityId
+
+  async update(params: QuibleIdentityUpdateParams) {
+    const { wallet } = params
+    const { signer: faucetSigner, outpoint: faucetOutpoint } =
+      await wallet.provider.fetchFaucetOutput()
+
+    const { outpoint } = await wallet.provider.fetchOutputsByObjectId(
+      this.id.toBytes(),
+    )
+
+    const transaction: TransactionContents = {
+      inputs: [
+        { outpoint: faucetOutpoint, signatureScript: [] },
+        { outpoint, signatureScript: [] },
+      ],
+      outputs: [
+        {
+          type: 'Object',
+          data: {
+            objectId: {
+              raw: this.id.toBytes(),
+              mode: { type: 'Existing', permitIndex: 0n },
+            },
+            dataScript: [
+              // { code: 'SETCERTTTL', data: BigInt(params.certificateLifespan) },
+              ...((params.insert ?? []).map((claim) => {
+                let data: Uint8Array
+
+                if (typeof claim === 'string') {
+                  data = new TextEncoder().encode(claim)
+                } else if ('hex' in claim) {
+                  data = convertHexStringToUint8Array(claim.hex)
+                } else {
+                  data = claim.raw
+                }
+
+                return {
+                  code: 'INSERT',
+                  data,
+                }
+              }) as TransactionOpCode[]),
+            ],
+            pubkeyScript: [
+              { code: 'DUP' },
+              {
+                code: 'PUSH',
+                data: wallet.signer.address.toBytes(),
+              },
+              { code: 'EQUALVERIFY' },
+              { code: 'CHECKSIGVERIFY' },
+            ],
+          },
+        },
+      ],
+      locktime: 0n,
+    }
+
+    const faucetSignedTransaction =
+      await faucetSigner.signTransaction(transaction)
+    const walletSignedTransaction =
+      await wallet.signer.signTransaction(transaction)
+
+    faucetSignedTransaction.contents.inputs[1].signatureScript =
+      walletSignedTransaction.contents.inputs[1].signatureScript
+
+    await wallet.provider.sendTransaction(
+      encodeTransaction(faucetSignedTransaction.contents),
+    )
+  }
+
+  public static fromHexString(identityId: string) {
+    return new Identity(convertHexStringToFixedLengthUint8Array(identityId, 32))
+  }
+
+  public static fromUint8Array(identityId: Uint8Array) {
+    if (identityId.length === 32) {
+      return new Identity(identityId as Uint8Array & { length: 32 })
+    }
+
+    throw new Error('Identity.fromUint8Array: expected length 32')
+  }
+
+  private constructor(id: Uint8Array & { length: 32 }) {
+    this.id = {
+      toBytes() {
+        return id
+      },
+      toHexString() {
+        return convertUint8ArrayToHexString(id)
+      },
+    }
+  }
+
+  async getCertificate(params: GetCertificateParams) {
+    if (params.claims.length !== 1) {
+      throw new Error(
+        'Identity#getCertificate: only one claim per certificate allowed',
+      )
+    }
+  }
 }
 
 export class QuibleWallet {
@@ -167,11 +331,11 @@ export class QuibleWallet {
       locktime: 0n,
     }
 
-    const encodedSignedIdentityTransaction =
+    const signedIdentityTransaction =
       await faucetSigner.signTransaction(identityTransaction)
 
-    await this.provider.sendTransaction(encodedSignedIdentityTransaction)
+    await this.provider.sendTransaction(signedIdentityTransaction.encode())
 
-    return new Identity(objectId)
+    return Identity.fromUint8Array(objectId)
   }
 }

@@ -37,8 +37,8 @@ use tx::types::{
     TransactionOpCode, TransactionOutpoint, TransactionOutput,
 };
 use types::{
-    BlockDetailsPayload, BlockHeightPayload, FaucetOutputPayload, HealthCheckResponse,
-    ValueOutputEntry, ValueOutputsPayload,
+    BlockDetailsPayload, BlockHeightPayload, ClaimsPayload, FaucetOutputPayload,
+    HealthCheckResponse, OutpointsPayload, ValueOutputEntry, ValueOutputsPayload,
 };
 
 use rpc::QuibleRpcServer;
@@ -700,6 +700,89 @@ impl rpc::QuibleRpcServer for QuibleRpcServerImpl {
                 None as Option<String>,
             )),
         }
+    }
+
+    async fn get_unspent_object_outputs_by_object_id(
+        &self,
+        object_id: [u8; 32],
+    ) -> Result<OutpointsPayload, ErrorObjectOwned> {
+        let result = self
+            .db
+            .query(
+                "\
+                SELECT * FROM transaction_outputs\n\
+                WHERE spent = false\n\
+                AND output.object_id.raw = $object_id",
+            )
+            .bind(("object_id", surrealdb::sql::Bytes::from(object_id.to_vec())))
+            .await;
+
+        let output_rows: Vec<TransactionOutputRow> = result
+            .and_then(|mut response| response.take(0))
+            .map_err(|err| {
+                ErrorObjectOwned::owned(
+                    CALL_EXECUTION_FAILED_CODE,
+                    "call execution failed: database query error",
+                    Some(err.to_string()),
+                )
+            })?;
+
+        let mut outpoints: Vec<TransactionOutpoint> = vec![];
+
+        for row in output_rows {
+            let mut transaction_hash = [0u8; 32];
+            hex::decode_to_slice(row.transaction_hash, &mut transaction_hash).map_err(|err| {
+                ErrorObjectOwned::owned(
+                    CALL_EXECUTION_FAILED_CODE,
+                    "call execution failed: failed to decode transaction hash hex",
+                    Some(err.to_string()),
+                )
+            })?;
+
+            outpoints.push(TransactionOutpoint {
+                txid: transaction_hash,
+                index: row.output_index,
+            })
+        }
+
+        Ok(OutpointsPayload { outpoints })
+    }
+
+    async fn get_claims_by_object_id(
+        &self,
+        object_id: [u8; 32],
+    ) -> Result<ClaimsPayload, ErrorObjectOwned> {
+        let object_id_hex = hex::encode(object_id);
+        let surreal_object_id = SurrealID(Thing::from((
+            "objects".to_string(),
+            object_id_hex.to_string(),
+        )));
+
+        let result = self
+            .db
+            .query("SELECT claims FROM objects WHERE id = $id LIMIT 1")
+            .bind(("id", surreal_object_id))
+            .await;
+
+        let claims_rows_option: Option<Vec<Vec<u8>>> = result
+            .and_then(|mut response| response.take((0, "claims")))
+            .map_err(|err| {
+                ErrorObjectOwned::owned(
+                    CALL_EXECUTION_FAILED_CODE,
+                    "call execution failed: database query error",
+                    Some(err.to_string()),
+                )
+            })?;
+
+        let claims_rows = claims_rows_option.ok_or(ErrorObjectOwned::owned(
+            CALL_EXECUTION_FAILED_CODE,
+            "call execution failed: could not find object",
+            None as Option<String>,
+        ))?;
+
+        Ok(ClaimsPayload {
+            claims: claims_rows,
+        })
     }
 
     async fn get_block_height(&self) -> Result<BlockHeightPayload, ErrorObjectOwned> {
