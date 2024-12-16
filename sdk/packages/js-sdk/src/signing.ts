@@ -38,8 +38,13 @@ export class Signer {
     public address: Address,
     public signTransaction: (
       transaction: TransactionContents,
-    ) => Promise<RawSignedTransaction>,
+    ) => Promise<SignedTransaction>,
   ) {}
+}
+
+export type SignedTransaction = {
+  contents: TransactionContents
+  encode: () => RawSignedTransaction
 }
 
 export const makeSigner = (
@@ -48,7 +53,7 @@ export const makeSigner = (
 ): Signer => {
   const signTransaction = async (
     transactionContents: TransactionContents,
-  ): Promise<RawSignedTransaction> => {
+  ): Promise<SignedTransaction> => {
     const encodedUnsignedTransaction = encodeTransaction(transactionContents)
     const signature = await signMessage(encodedUnsignedTransaction.toBytes())
     const signedTransactionContents: TransactionContents = {
@@ -63,9 +68,10 @@ export const makeSigner = (
       locktime: transactionContents.locktime,
     }
 
-    console.log(signedTransactionContents)
-
-    return encodeTransaction(signedTransactionContents)
+    return {
+      contents: signedTransactionContents,
+      encode: () => encodeTransaction(signedTransactionContents),
+    }
   }
 
   return new Signer(new Address(address), signTransaction)
