@@ -7,7 +7,8 @@ use jsonrpsee::types::ErrorObjectOwned;
 use crate::cert;
 use crate::tx::types::Transaction;
 use crate::types::{
-    self, BlockDetailsPayload, BlockHeightPayload, FaucetOutputPayload, ValueOutputsPayload,
+    self, BlockDetailsPayload, BlockHeightPayload, FaucetOutputPayload, OutpointsPayload,
+    ValueOutputsPayload,
 };
 
 #[rpc(server, client, namespace = "quible")]
@@ -39,6 +40,18 @@ pub trait QuibleRpc {
 
     #[method(name = "requestFaucetOutput")]
     async fn request_faucet_output(&self) -> Result<FaucetOutputPayload, ErrorObjectOwned>;
+
+    #[method(name = "getUnspentObjectOutputsByObjectId")]
+    async fn get_unspent_object_outputs_by_object_id(
+        &self,
+        object_id: [u8; 32],
+    ) -> Result<OutpointsPayload, ErrorObjectOwned>;
+
+    #[method(name = "getClaimsByObjectId")]
+    async fn get_claims_by_object_id(
+        &self,
+        object_id: [u8; 32],
+    ) -> Result<ClaimsPayload, ErrorObjectOwned>;
 
     #[method(name = "getBlockHeight")]
     async fn get_block_height(&self) -> Result<BlockHeightPayload, ErrorObjectOwned>;

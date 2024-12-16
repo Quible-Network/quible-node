@@ -251,3 +251,13 @@ pub struct BlockDetailsPayload {
     #[serde_as(as = "DisplayFromStr")]
     pub transaction_count: u64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutpointsPayload {
+    pub outpoints: Vec<TransactionOutpoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClaimsPayload {
+    pub claims: Vec<Vec<u8>>,
+}
