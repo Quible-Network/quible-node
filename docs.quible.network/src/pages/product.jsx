@@ -49,6 +49,7 @@ export default () => {
   };
 
   const background = theme === "light" ? "e1cce2" : "8b6eb0";
+  const offBackground = theme === "light" ? "d9c3de" : "9073b3";
 
   return (
     <div className="flex-grow relative h-full bg-quible-lightest dark:bg-quible-darkest">
@@ -141,11 +142,10 @@ export default () => {
               </div>
             </div>
             <h1 className="text-quible-heaviest dark:text-quible-lighter text-4xl sm:text-3xl my-5 leading-normal">
-              The decentralized security infrastructure marketplace.
+              Multi-chain key management and access control
             </h1>
             <p className="text-quible-heaviest dark:text-quible-lighter text-2xl font-medium">
-              No more vendor lock-in. Build identity-native security with any
-              application.
+              We’re creating a new paradigm for protecting onchain assets. Stop distributing sensitive credentials to your workforce.
             </p>
             <a
               href="https://t.me/quiblealpha"
@@ -159,16 +159,12 @@ export default () => {
             <div className="px-10 py-16 ml-10 xl:ml-20 mr-10 my-5 bg-quible-lighter text-quible-deepest dark:text-quible-lightest dark:bg-quible-deepest">
               <h1 className="text-4xl font-bold pb-5">Problem</h1>
               <div className="text-sm font-mono font-bold">
-                Identity-aware security infrastructure is the state-of-the-art,
-                but many applications are unable to implement it with their
-                existing cloud provider.
+                Private key leaks are inevitable. Multi-sig wallets can’t protect everything. Countless organizations still rely on externally-owned accounts with single-sig protection.
               </div>
               <div className="my-16 h-px w-full bg-quible-deepest dark:bg-quible-lightest"></div>
               <h1 className="text-4xl font-bold pb-5">Solution</h1>
               <div className="text-sm font-mono font-bold">
-                Quible enables a marketplace where application developers can
-                purchase from security infrastructure providers and easily
-                switch or combine providers when they discover better options.
+                With certificate-based access control, Quible’s platform allows organizations to proactively protect themselves from attacks in ways that were not possible before.
               </div>
             </div>
           </div>
@@ -195,34 +191,50 @@ export default () => {
             <div className="relative z-1 text-quible-black dark:text-quible-white max-w-5xl py-96">
               <h1 className="font-normal p-10 bg-quible-lightest dark:bg-quible-darkest text-3xl md:text-5xl leading-relaxed md:leading-snug mx-10">
                 <span className="text-quible-deep dark:text-quible-mildest">
-                  Centralized providers dominate security infrastructure, but
-                  their IAM tools are inflexible. We deliver provider-agnostic
-                  IAM at
+                  Single-signer EOAs are managing over
                 </span>{" "}
-                lower latency{" "}
+                $26 billion 
+                {" "}
                 <span className="text-quible-deep dark:text-quible-mildest">
-                  and
+                  onchain. Let’s bring
                 </span>{" "}
-                higher scale{" "}
+                  institutional security
+                {" "}
                 <span className="text-quible-deep dark:text-quible-mildest">
-                  than anything on the market.
+                  to the mainstream.
                 </span>
               </h1>
             </div>
           </div>
         </div>
+        <div className="relative self-stretch flex flex-col items-center bg-quible-lightest dark:bg-quible-darkest">
+          <div className="absolute inset-0 bg-quible-lighter dark:bg-quible-darker" style={{
+            maskRepeat: 'no-repeat',
+            WebkitMaskRepeat: 'no-repeat',
+            maskSize: 'contain',
+            WebkitMaskSize: 'cover',
+            maskPosition: 'center',
+          maskImage: 'url(/img/nyc.svg)',
+          WebkitMaskImage: 'url(/img/nyc.svg)'
+        }}>
+          </div>
+          <div
+            className="absolute inset-0 w-full h-full from-quible-lightest"
+            style={{
+              backgroundImage: `linear-gradient(to bottom, #${background}, transparent, transparent, transparent, transparent, #${background})`,
+            }}
+          ></div>
         <div className="w-full relative -mt-24 mb-24">
           <div className="w-full mt-32 mb-32 max-w-5xl mx-auto relative px-10">
             <div className="w-full h-px bg-quible-medium relative"></div>
           </div>
           <div className="w-full max-w-5xl mx-auto">
-            <div className="text-quible-black dark:text-quible-white mx-10 space-y-10">
-              <h1 className="font-normal bg-quible-lightest dark:bg-quible-darkest text-3xl md:text-5xl leading-relaxed md:leading-snug">
+            <div className="text-quible-black dark:text-quible-white p-10 space-y-10 bg-quible-lightest dark:bg-quible-darkest">
+              <h1 className="font-normal text-3xl md:text-5xl leading-relaxed md:leading-snug">
                 Integrate in just a few lines of code
               </h1>
               <div>
-                With Quible, you can forget about configuring complex and costly
-                security services.
+                With Quible, you can implement safer security policies for you and your entire team.
               </div>
               <div className="border border-solid border-quible-medium w-full grid grid-cols-1 sm:grid-cols-2">
                 <div className="w-full flex-grow flex-shrink-0 basis-1 border-b border-r-0 border-t-0 border-l-0 sm:border-b-0 sm:border-r border-solid border-quible-medium p-10 text-quible-black text-xl dark:text-quible-white">
@@ -235,7 +247,7 @@ export default () => {
                   <span className="font-mono text-quible-darker dark:text-quible-lighter pr-5">
                     02
                   </span>
-                  Only pay for the traffic you consume
+                  Use fine-grained access policies
                 </div>
               </div>
             </div>
@@ -246,8 +258,8 @@ export default () => {
             <div className="w-full h-px bg-quible-medium relative"></div>
           </div>
           <div className="w-full max-w-5xl mx-auto">
-            <div className="text-quible-black dark:text-quible-white mx-10 space-y-10">
-              <h1 className="font-normal bg-quible-lightest dark:bg-quible-darkest text-3xl md:text-5xl leading-relaxed md:leading-snug">
+            <div className="text-quible-black dark:text-quible-white p-10 space-y-10 bg-quible-lightest dark:bg-quible-darkest">
+              <h1 className="font-normal text-3xl md:text-5xl leading-relaxed md:leading-snug">
                 State of the art security
               </h1>
               <div>
@@ -282,13 +294,31 @@ export default () => {
             </div>
           </div>
         </div>
+      </div>
+        <div className="relative self-stretch flex flex-col items-center bg-quible-lightest dark:bg-quible-darkest">
+          <div className="absolute inset-0 bg-quible-lighter dark:bg-quible-darker" style={{
+            maskRepeat: 'no-repeat',
+            WebkitMaskRepeat: 'no-repeat',
+            maskSize: 'contain',
+            WebkitMaskSize: 'cover',
+            maskPosition: 'center',
+          maskImage: 'url(/img/sf.svg)',
+          WebkitMaskImage: 'url(/img/sf.svg)'
+        }}>
+          </div>
+          <div
+            className="absolute inset-0 w-full h-full from-quible-lightest"
+            style={{
+              backgroundImage: `linear-gradient(to bottom, #${background}, #${background}, transparent, transparent, #${background})`,
+            }}
+          ></div>
         <div className="w-full relative -mt-24 mb-24">
           <div className="w-full mt-32 mb-32 max-w-5xl mx-auto relative px-10">
             <div className="w-full h-px bg-quible-medium relative"></div>
           </div>
           <div className="w-full max-w-5xl mx-auto">
-            <div className="text-quible-black dark:text-quible-white mx-10 space-y-10">
-              <h1 className="font-normal bg-quible-lightest dark:bg-quible-darkest text-3xl md:text-5xl leading-relaxed md:leading-snug">
+            <div className="text-quible-black dark:text-quible-white p-10 space-y-10 bg-quible-lightest dark:bg-quible-darkest">
+              <h1 className="font-normal text-3xl md:text-5xl leading-relaxed md:leading-snug">
                 Built for the future
               </h1>
               <div>
@@ -307,17 +337,15 @@ export default () => {
                 <div className="w-full flex-grow flex-shrink-0 basis-1 p-10 text-quible-black text-xl dark:text-quible-white bg-quible-lighter dark:bg-quible-darker space-y-10">
                   <div className="text-center">Authentication</div>
                   <div className="text-sm text-quible-darkest dark:text-quible-lighter">
-                    Quible&rsquo;s authentication marketplace allows vendors to
-                    provide externally-hosted authentication layers supporting
-                    OAuth 2.0 and MFA with seamless Quible IAM integration.
+                    Quible&rsquo;s resource provisioning capabilities allows organizations to quickly create
+                    authentication infrastructure for workforce and customer identity, including
+                    OAuth 2.0 and MFA capabilities.
                   </div>
                 </div>
                 <div className="w-full flex-grow flex-shrink-0 basis-1 p-10 text-quible-black text-xl dark:text-quible-white bg-quible-lighter dark:bg-quible-darker space-y-10">
-                  <div className="text-center">DDoS Protection</div>
+                  <div className="text-center">Network Protection</div>
                   <div className="text-sm text-quible-darkest dark:text-quible-lighter">
-                    A fair market where developers can buy flexible,
-                    identity-aware protection, while providers can profitably
-                    resell attack mitigation services from industry leaders.
+                    Provision flexible, identity-aware protection including bot mitigation and DDoS protection, for your Web3 cloud infrastructure.
                   </div>
                 </div>
                 {/* <div className="w-full flex-grow flex-shrink-0 basis-1 p-10 text-quible-black text-xl dark:text-quible-white bg-quible-lighter dark:bg-quible-darker space-y-10">
@@ -362,6 +390,7 @@ export default () => {
             </Link>
           </div>
         </div>
+      </div>
         <div className="w-full relative">
           <div className="max-w-7xl mx-auto mb-10">
             <Link
