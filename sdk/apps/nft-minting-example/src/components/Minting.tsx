@@ -1,12 +1,23 @@
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { waitForTransactionReceipt, readContract } from '@wagmi/core'
 import { useReadContract, useWriteContract, useConfig } from 'wagmi'
 import MyNFTArtifacts from '../../artifacts/contracts/MyNFT.sol/MyNFT.json'
 import { convertHexStringToUint8Array } from '@quible/js-sdk/lib/utils'
 
 const Minting = (props: { accountAddress: string; tokenAddress: string }) => {
+  const [accessListUpdateIsPending, setAccessListUpdateIsPending] =
+    useState(false)
+  const [accessList, setAccessList] = useState<string[]>([])
   const config = useConfig()
   const { data: hash, writeContractAsync } = useWriteContract()
+
+  const { data: ownerAddressData, isSuccess: ownerAddressDataIsSuccess } =
+    useReadContract({
+      abi: MyNFTArtifacts.abi,
+      address: props.tokenAddress as unknown as `0x${string}`,
+      functionName: 'owner',
+      args: [],
+    })
 
   const { data, isSuccess, refetch } = useReadContract({
     abi: MyNFTArtifacts.abi,
@@ -15,15 +26,20 @@ const Minting = (props: { accountAddress: string; tokenAddress: string }) => {
     args: [props.accountAddress],
   })
 
+  const handleAccessListUpdate = useCallback(async () => {
+    setAccessListUpdateIsPending(true)
+    setAccessListUpdateIsPending(false)
+  }, [])
+
   const handleMint = useCallback(async () => {
-    console.log('querying quirkle root', props.tokenAddress)
-    const quirkleRoot = await readContract(config, {
+    console.log(`querying object id tokenAddress=${props.tokenAddress}`)
+    const identityId = await readContract(config, {
       abi: MyNFTArtifacts.abi,
       address: props.tokenAddress as `0x${string}`,
-      functionName: 'getQuirkleRoot',
+      functionName: 'getAccessListIdentityId',
     })
 
-    console.log('got quirkle root', quirkleRoot)
+    console.log('got identity id', identityId)
 
     const response = await fetch('http://localhost:9013', {
       method: 'POST',
@@ -35,7 +51,7 @@ const Minting = (props: { accountAddress: string; tokenAddress: string }) => {
         method: 'quible_requestCertificate',
         id: 67,
         params: [
-          [...convertHexStringToUint8Array(quirkleRoot as string)],
+          [...convertHexStringToUint8Array(identityId as string)],
           [...convertHexStringToUint8Array(props.accountAddress.toLowerCase())],
         ],
       }),
@@ -71,12 +87,13 @@ const Minting = (props: { accountAddress: string; tokenAddress: string }) => {
     writeContractAsync,
   ])
 
-  if (!isSuccess) {
+  if (!isSuccess || !ownerAddressDataIsSuccess) {
     return <div>Loading...</div>
   }
 
   return (
     <div>
+      {ownerAddressData === props.accountAddress && <h1>You are the owner</h1>}
       <button onClick={handleMint}>Mint</button>
       <p>total NFT count: {`${data}`}</p>
       {hash && <p>Transaction hash: {hash}</p>}

@@ -9,17 +9,17 @@ import "@quible/verifier-solidity-sdk/contracts/QuibleVerifier.sol";
 
 contract MyNFT is ERC721, ERC721Enumerable, Ownable {
     uint256 private _nextTokenId;
-    bytes32 public quirkleRoot;
+    bytes32 public accessListIdentityId;
 
-    constructor(address initialOwner, bytes32 _quirkleRoot)
+    constructor(address initialOwner, bytes32 _accessListIdentityId)
         ERC721("MyNFT", "QMNFT")
         Ownable(initialOwner)
     {
-        quirkleRoot = _quirkleRoot;
+        accessListIdentityId = _accessListIdentityId;
     }
 
     modifier membersOnly(address to, uint64 expires_at, bytes memory signature) {
-        QuibleVerifier.verifyProof(quirkleRoot, to, expires_at, signature);
+        QuibleVerifier.verifyProof(accessListIdentityId, to, expires_at, signature);
         _;
     }
 
@@ -54,7 +54,7 @@ contract MyNFT is ERC721, ERC721Enumerable, Ownable {
         return super.supportsInterface(interfaceId);
     }
 
-    function getQuirkleRoot() public view returns (bytes32) {
-        return quirkleRoot;
+    function getAccessListIdentityId() public view returns (bytes32) {
+        return accessListIdentityId;
     }
 }
