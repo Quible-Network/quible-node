@@ -40,7 +40,7 @@ const identity = await wallet.createIdentity({
   certificateLifespan: 86400
 })
 
-console.log('identity id: ', identity.id.toHex())
+console.log('identity id: ', identity.id.toHexString())
 ```
 
 ## Updating identities
@@ -54,7 +54,7 @@ const privateKey = '...'
 const identityId = '...'
 
 const wallet = Wallet.fromPrivateKey(privateKey)
-const identity = Identity.fromId(identityId)
+const identity = Identity.fromHexString(identityId)
 
 await identity.update({
   wallet,
@@ -72,7 +72,7 @@ import {Identity} from '@quible/sdk'
 
 const identityId = '...'
 
-const identity = Identity.fromId(identityId)
+const identity = Identity.fromHexString(identityId)
 
 const claims = [
   'utf8 string',
@@ -86,13 +86,13 @@ const certificates = await Promise.all(claims.map(async (claim) => {
   })
 
   console.log([
-    certificate.toBytes(),            // encoded certificate data as UInt8Array
-    certificate.claims[0].toBytes(),  // first attested claim value as UInt8Array
-    certificate.claims[0].toString(), // first attested claim value encoded as utf8 string
-    certificate.identity.id.toHex(),  // identity id in hexadecimal format
-    certificate.expiresAt,            // expiration date in seconds since unix epoch
-    certificate.toJSON(),             // JSON-serializable representation of an certificate
-    certificate.signature.toHex(),    // Secp256k1 32-byte ECDSA signature from the Quible network, in hexadecimal format
+    certificate.toBytes(),                  // encoded certificate data as UInt8Array
+    certificate.claims[0].toBytes(),        // first attested claim value as UInt8Array
+    certificate.claims[0].toString(),       // first attested claim value encoded as utf8 string
+    certificate.identity.id.toHexString(),  // identity id in hexadecimal format
+    certificate.expiresAt,                  // expiration date in seconds since unix epoch
+    certificate.toJSON(),                   // JSON-serializable representation of an certificate
+    certificate.signature.toHexString(),    // Secp256k1 32-byte ECDSA signature from the Quible network, in hexadecimal format
   ])
 
   return certificate

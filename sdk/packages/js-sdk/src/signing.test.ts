@@ -56,6 +56,8 @@ describe('signer', () => {
     )
 
     const result = await signer.signTransaction(sampleTransaction)
-    expect(convertUint8ArrayToHexString(result.toBytes())).toBe(expected)
+    expect(convertUint8ArrayToHexString(result.encode().toBytes())).toBe(
+      expected,
+    )
   })
 })
